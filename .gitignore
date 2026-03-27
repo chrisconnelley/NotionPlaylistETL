@@ -1,0 +1,19 @@
+# Credentials & tokens — never commit these
+.env
+.cache
+
+# Generated at runtime
+playlist_cache.json
+etl_log_*.txt
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Claude Code internals
+.claude/
+
+# VS Code
+.vscode/
