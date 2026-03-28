@@ -1,0 +1,168 @@
+{
+  "name": "Teri Playlist Songs",
+  "data_source_id": "1c741983-beb5-81f1-81d2-000b5ea207b9",
+  "database_id": "1c741983-beb5-8060-a39d-f8ba8b02f27b",
+  "description": "",
+  "properties": {
+    "▶️ Teri & Chris’s Playlists": {
+      "id": "L%5CX%3C",
+      "name": "▶️ Teri & Chris’s Playlists",
+      "description": null,
+      "type": "relation",
+      "relation": {
+        "database_id": "91b88eb5-1df5-4287-8a90-c48f6b6755f9",
+        "data_source_id": "a43f996e-a030-4ed0-ac96-294d8e8d4935",
+        "type": "dual_property",
+        "dual_property": {
+          "synced_property_name": "🗣️ Teri Playlist Songs",
+          "synced_property_id": "h%3FnZ"
+        }
+      }
+    },
+    "Automation Complete": {
+      "id": "L_LI",
+      "name": "Automation Complete",
+      "description": null,
+      "type": "checkbox",
+      "checkbox": {}
+    },
+    "Playlist Order": {
+      "id": "LtcM",
+      "name": "Playlist Order",
+      "description": null,
+      "type": "number",
+      "number": {
+        "format": "number"
+      }
+    },
+    "Jessie Songs": {
+      "id": "OGpB",
+      "name": "Jessie Songs",
+      "description": null,
+      "type": "relation",
+      "relation": {
+        "database_id": "8ccd2adb-8912-493c-afe1-1b06c3433828",
+        "data_source_id": "ab1af193-7eb2-4874-97de-01d733f0efa0",
+        "type": "dual_property",
+        "dual_property": {
+          "synced_property_name": "Jessie Songs (Teri?)",
+          "synced_property_id": "s%5BYa"
+        }
+      }
+    },
+    "Song-Release Year": {
+      "id": "OfUS",
+      "name": "Song-Release Year",
+      "description": null,
+      "type": "rollup",
+      "rollup": {
+        "rollup_property_name": "Release Year",
+        "relation_property_name": "Jessie Songs",
+        "rollup_property_id": "DE>?",
+        "relation_property_id": "OGpB",
+        "function": "show_original"
+      }
+    },
+    "tags": {
+      "id": "Os%3AY",
+      "name": "tags",
+      "description": null,
+      "type": "multi_select",
+      "multi_select": {
+        "options": []
+      }
+    },
+    "Jessie Song-Artist": {
+      "id": "%5CFsF",
+      "name": "Jessie Song-Artist",
+      "description": null,
+      "type": "rollup",
+      "rollup": {
+        "rollup_property_name": "Song Artists",
+        "relation_property_name": "Jessie Songs",
+        "rollup_property_id": "dVgH",
+        "relation_property_id": "OGpB",
+        "function": "show_original"
+      }
+    },
+    "Song-Owned": {
+      "id": "bDz%40",
+      "name": "Song-Owned",
+      "description": null,
+      "type": "rollup",
+      "rollup": {
+        "rollup_property_name": "Owned",
+        "relation_property_name": "Jessie Songs",
+        "rollup_property_id": "[\\S?",
+        "relation_property_id": "OGpB",
+        "function": "show_original"
+      }
+    },
+    "👩🏼‍🎤 Song Artists": {
+      "id": "i%3CYD",
+      "name": "👩🏼‍🎤 Song Artists",
+      "description": null,
+      "type": "relation",
+      "relation": {
+        "database_id": "d5367ed0-480a-4ccc-9ad4-bda5e56fbf91",
+        "data_source_id": "71a622ef-2705-4598-be2c-319998359242",
+        "type": "single_property",
+        "single_property": {}
+      }
+    },
+    "complete": {
+      "id": "ji_U",
+      "name": "complete",
+      "description": null,
+      "type": "checkbox",
+      "checkbox": {}
+    },
+    "🎤 Teri Songs": {
+      "id": "ouY%40",
+      "name": "🎤 Teri Songs",
+      "description": null,
+      "type": "relation",
+      "relation": {
+        "database_id": "8ccd2adb-8912-493c-afe1-1b06c3433828",
+        "data_source_id": "ab1af193-7eb2-4874-97de-01d733f0efa0",
+        "type": "dual_property",
+        "dual_property": {
+          "synced_property_name": "🗣️ Teri Playlist Songs",
+          "synced_property_id": "Dpk%5E"
+        }
+      }
+    },
+    "Teri Song-Artist": {
+      "id": "s%5BJS",
+      "name": "Teri Song-Artist",
+      "description": null,
+      "type": "rollup",
+      "rollup": {
+        "rollup_property_name": "Song Artists",
+        "relation_property_name": "🎤 Teri Songs",
+        "rollup_property_id": "dVgH",
+        "relation_property_id": "ouY@",
+        "function": "show_original"
+      }
+    },
+    "Jessie Playlist": {
+      "id": "%7DTlU",
+      "name": "Jessie Playlist",
+      "description": null,
+      "type": "relation",
+      "relation": {
+        "database_id": "5b0f6317-af53-401f-9741-3f862542f6cf",
+        "data_source_id": "d23c2bd2-780d-405c-90c7-c95edb469dad",
+        "type": "single_property",
+        "single_property": {}
+      }
+    },
+    "Name": {
+      "id": "title",
+      "name": "Name",
+      "description": null,
+      "type": "title",
+      "title": {}
+    }
+  }
+}

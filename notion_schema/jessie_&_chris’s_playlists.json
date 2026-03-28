@@ -1,0 +1,105 @@
+{
+  "name": "Jessie & Chris’s Playlists",
+  "data_source_id": "d23c2bd2-780d-405c-90c7-c95edb469dad",
+  "database_id": "5b0f6317-af53-401f-9741-3f862542f6cf",
+  "description": "Playlists that Chris and Jessie trade to demonstrate how much they fucking love each other!\n",
+  "properties": {
+    "Tracks": {
+      "id": "Gy%3D%3C",
+      "name": "Tracks",
+      "description": null,
+      "type": "formula",
+      "formula": {
+        "expression": "\t{{notion:block_property:ZL%60t:00000000-0000-0000-0000-000000000000:0fa5965f-f501-4cec-9b23-dcc729be1ed3}}.length()"
+      }
+    },
+    "Tags": {
+      "id": "MEND",
+      "name": "Tags",
+      "description": null,
+      "type": "multi_select",
+      "multi_select": {
+        "options": [
+          {
+            "id": "fe1d6f7a-b971-4caa-906b-f050bb16d5d4",
+            "name": "anniversary",
+            "color": "yellow",
+            "description": null
+          }
+        ]
+      }
+    },
+    "Songs": {
+      "id": "Mq%3C%3C",
+      "name": "Songs",
+      "description": null,
+      "type": "rollup",
+      "rollup": {
+        "rollup_property_name": "Song",
+        "relation_property_name": "Playlist Songs",
+        "rollup_property_id": "OGpB",
+        "relation_property_id": "ZL`t",
+        "function": "count_values"
+      }
+    },
+    "Shared Date": {
+      "id": "RmV%3A",
+      "name": "Shared Date",
+      "description": null,
+      "type": "date",
+      "date": {}
+    },
+    "Playlist Songs": {
+      "id": "ZL%60t",
+      "name": "Playlist Songs",
+      "description": null,
+      "type": "relation",
+      "relation": {
+        "database_id": "93b98cda-f7c4-4699-9eb2-a518feb9b7ac",
+        "data_source_id": "a1720dcb-2368-4e34-8d9d-c2c375eac101",
+        "type": "dual_property",
+        "dual_property": {
+          "synced_property_name": "Jessie Playlist",
+          "synced_property_id": "%7DTlU"
+        }
+      }
+    },
+    "Playlist Documentation": {
+      "id": "%5EmFO",
+      "name": "Playlist Documentation",
+      "description": null,
+      "type": "url",
+      "url": {}
+    },
+    "Occasion": {
+      "id": "%60w%7BA",
+      "name": "Occasion",
+      "description": null,
+      "type": "rich_text",
+      "rich_text": {}
+    },
+    "Song Parity": {
+      "id": "b%7CRD",
+      "name": "Song Parity",
+      "description": null,
+      "type": "formula",
+      "formula": {
+        "expression": "{{notion:block_property:Gy%3D%3C:00000000-0000-0000-0000-000000000000:0fa5965f-f501-4cec-9b23-dcc729be1ed3}}== {{notion:block_property:Mq%3C%3C:00000000-0000-0000-0000-000000000000:0fa5965f-f501-4cec-9b23-dcc729be1ed3}}"
+      }
+    },
+    "Playlist Cover": {
+      "id": "oxuK",
+      "name": "Playlist Cover",
+      "description": null,
+      "type": "files",
+      "files": {}
+    },
+    "Name": {
+      "id": "title",
+      "name": "Name",
+      "description": null,
+      "type": "title",
+      "title": {}
+    }
+  }
+}

@@ -11,6 +11,7 @@ from lyrics import fetch_lyrics
 from logger import log
 from spotify import fetch_all_tracks
 from theme import SURFACE, TEXT
+from ui.notion_dialog import NotionDatabasePicker
 
 
 class PlaylistTab(ttk.Frame):
@@ -90,6 +91,8 @@ class PlaylistTab(ttk.Frame):
         self.status_var = tk.StringVar(value="Loading tracks…")
         ttk.Label(bar, textvariable=self.status_var).pack(side="left")
         ttk.Button(bar, text="Close Tab", command=self._close_cb).pack(side="right")
+        ttk.Button(bar, text="Export to Notion",
+                   command=self._export_to_notion).pack(side="right", padx=(0, 6))
         ttk.Button(bar, text="Export to CSV",
                    command=self._export).pack(side="right", padx=(0, 6))
         self.refresh_btn = ttk.Button(bar, text="Refresh",
@@ -259,6 +262,18 @@ class PlaylistTab(ttk.Frame):
             data.sort(key=lambda x: x[0].lower())
         for i, (_, iid) in enumerate(data):
             self.tree.move(iid, "", i)
+
+    def _export_to_notion(self):
+        if not self._tracks:
+            messagebox.showwarning("No tracks", "Tracks are still loading.")
+            return
+        NotionDatabasePicker(self, on_select=self._on_notion_database_selected)
+
+    def _on_notion_database_selected(self, database: dict):
+        log.info("Exporting %d tracks to Notion database %r (%s)",
+                 len(self._tracks), database["name"], database["id"])
+        messagebox.showinfo("Coming soon",
+                            f"Export to \"{database['name']}\" will be wired up next.")
 
     def _export(self):
         if not self._tracks:

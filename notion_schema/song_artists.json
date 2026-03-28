@@ -1,0 +1,118 @@
+{
+  "name": "Song Artists",
+  "data_source_id": "71a622ef-2705-4598-be2c-319998359242",
+  "database_id": "d5367ed0-480a-4ccc-9ad4-bda5e56fbf91",
+  "description": "",
+  "properties": {
+    "Genres": {
+      "id": "%3Fcy%3F",
+      "name": "Genres",
+      "description": null,
+      "type": "multi_select",
+      "multi_select": {
+        "options": []
+      }
+    },
+    "Image URL": {
+      "id": "%3FrpG",
+      "name": "Image URL",
+      "description": null,
+      "type": "url",
+      "url": {}
+    },
+    "Playlist Songs": {
+      "id": "EIv_",
+      "name": "Playlist Songs",
+      "description": "",
+      "type": "rollup",
+      "rollup": {
+        "rollup_property_name": "🗣️ Jessie Playlist Songs",
+        "relation_property_name": "Songs",
+        "rollup_property_id": "P{fG",
+        "relation_property_id": "bEil",
+        "function": "show_original"
+      }
+    },
+    "Spotify URL": {
+      "id": "ENj~",
+      "name": "Spotify URL",
+      "description": null,
+      "type": "url",
+      "url": {}
+    },
+    "Tags": {
+      "id": "I_SH",
+      "name": "Tags",
+      "description": null,
+      "type": "multi_select",
+      "multi_select": {
+        "options": []
+      }
+    },
+    "Song Count": {
+      "id": "Xu%7CV",
+      "name": "Song Count",
+      "description": null,
+      "type": "formula",
+      "formula": {
+        "expression": "\t\t{{notion:block_property:bEil:00000000-0000-0000-0000-000000000000:0fa5965f-f501-4cec-9b23-dcc729be1ed3}}.length()"
+      }
+    },
+    "Spotify Artist ID": {
+      "id": "%5CnxO",
+      "name": "Spotify Artist ID",
+      "description": null,
+      "type": "rich_text",
+      "rich_text": {}
+    },
+    "Songs": {
+      "id": "bEil",
+      "name": "Songs",
+      "description": null,
+      "type": "relation",
+      "relation": {
+        "database_id": "8ccd2adb-8912-493c-afe1-1b06c3433828",
+        "data_source_id": "ab1af193-7eb2-4874-97de-01d733f0efa0",
+        "type": "dual_property",
+        "dual_property": {
+          "synced_property_name": "Song Artists",
+          "synced_property_id": "dVgH"
+        }
+      }
+    },
+    "Playlist Creator": {
+      "id": "j%5Emq",
+      "name": "Playlist Creator",
+      "description": null,
+      "type": "formula",
+      "formula": {
+        "expression": "\tmap({{notion:block_property:EIv_:00000000-0000-0000-0000-000000000000:0fa5965f-f501-4cec-9b23-dcc729be1ed3}}, current.{{notion:block_property:bY_%5D:93b98cda-f7c4-4699-9eb2-a518feb9b7ac:0fa5965f-f501-4cec-9b23-dcc729be1ed3}}).unique()"
+      }
+    },
+    "Popularity": {
+      "id": "nI%7CE",
+      "name": "Popularity",
+      "description": null,
+      "type": "number",
+      "number": {
+        "format": "number"
+      }
+    },
+    "Followers": {
+      "id": "%7Bgul",
+      "name": "Followers",
+      "description": null,
+      "type": "number",
+      "number": {
+        "format": "number"
+      }
+    },
+    "Name": {
+      "id": "title",
+      "name": "Name",
+      "description": null,
+      "type": "title",
+      "title": {}
+    }
+  }
+}

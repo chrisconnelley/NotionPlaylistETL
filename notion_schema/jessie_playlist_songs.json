@@ -1,0 +1,598 @@
+{
+  "name": "Jessie Playlist Songs",
+  "data_source_id": "a1720dcb-2368-4e34-8d9d-c2c375eac101",
+  "database_id": "93b98cda-f7c4-4699-9eb2-a518feb9b7ac",
+  "description": "",
+  "properties": {
+    "key lyrics": {
+      "id": "AC%5DL",
+      "name": "key lyrics",
+      "description": null,
+      "type": "multi_select",
+      "multi_select": {
+        "options": [
+          {
+            "id": "848176c5-12ff-4ee2-b8bc-79681be7b65c",
+            "name": "honey",
+            "color": "yellow",
+            "description": null
+          },
+          {
+            "id": "d208782f-92d7-4d89-a19a-676218d91f63",
+            "name": "freak",
+            "color": "blue",
+            "description": null
+          },
+          {
+            "id": "f6f84387-bab8-46a5-ac9f-3dd30e85b6fc",
+            "name": "high",
+            "color": "red",
+            "description": null
+          },
+          {
+            "id": "8f360c74-620b-4f3d-8f60-1941f66db474",
+            "name": "nasty",
+            "color": "gray",
+            "description": null
+          },
+          {
+            "id": "ce580fdf-382a-4146-ac17-5b238db57f5c",
+            "name": "sunshine",
+            "color": "yellow",
+            "description": null
+          },
+          {
+            "id": "bab4629b-1466-4e06-9e6e-18ad3e083490",
+            "name": "sun",
+            "color": "yellow",
+            "description": null
+          },
+          {
+            "id": "65c4eec6-8232-438d-ab43-1f2a39378d61",
+            "name": "horny",
+            "color": "purple",
+            "description": null
+          },
+          {
+            "id": "3d96b4fd-d26b-4686-af3d-34d5ddd4ca91",
+            "name": "obsessed",
+            "color": "pink",
+            "description": null
+          },
+          {
+            "id": "477b9089-a031-43a0-8ccb-7c19315c08b2",
+            "name": "garden",
+            "color": "green",
+            "description": null
+          },
+          {
+            "id": "3ebe68b5-1520-496b-8177-fcfa2a7bd1e3",
+            "name": "heaven",
+            "color": "blue",
+            "description": null
+          },
+          {
+            "id": "5fdd25d2-3539-43b4-9a26-f19b92fe124e",
+            "name": "taboo",
+            "color": "orange",
+            "description": null
+          },
+          {
+            "id": "78965d24-229d-4ec3-ab60-f1bcb2965599",
+            "name": "diamond",
+            "color": "blue",
+            "description": null
+          },
+          {
+            "id": "14b20516-70f1-42fb-80f5-fd4183a0e004",
+            "name": "mystical",
+            "color": "purple",
+            "description": null
+          },
+          {
+            "id": "30d2125d-0114-4a2b-b8be-23caed01a271",
+            "name": "golden",
+            "color": "brown",
+            "description": null
+          },
+          {
+            "id": "e2725d85-26b7-4c04-b32e-b10166e7a7cb",
+            "name": "sugar",
+            "color": "default",
+            "description": null
+          },
+          {
+            "id": "3e35f8ac-196f-4239-8dc8-f12bda177f0c",
+            "name": "future",
+            "color": "yellow",
+            "description": null
+          },
+          {
+            "id": "854e4333-2e27-452a-ac80-e43783cca37d",
+            "name": "always",
+            "color": "purple",
+            "description": null
+          },
+          {
+            "id": "25376554-3b4a-4409-98e6-d6ae9b86b9c0",
+            "name": "kiss",
+            "color": "red",
+            "description": null
+          },
+          {
+            "id": "2a7c772e-43c7-4419-961b-8fe8f34ddb36",
+            "name": "promise",
+            "color": "purple",
+            "description": null
+          },
+          {
+            "id": "bc4c8e95-8288-4873-a8fd-678f6ac6d549",
+            "name": "follow",
+            "color": "purple",
+            "description": null
+          },
+          {
+            "id": "3282386c-50d3-488d-a20b-aa7599a14b0e",
+            "name": "moon",
+            "color": "pink",
+            "description": null
+          },
+          {
+            "id": "8317d9a0-141f-49b5-87bb-898571237b3b",
+            "name": "darkness",
+            "color": "purple",
+            "description": null
+          },
+          {
+            "id": "4f4a3c2c-2fc8-490a-b0c1-2f92c6d43814",
+            "name": "battle",
+            "color": "red",
+            "description": null
+          },
+          {
+            "id": "9dd630fe-9b00-4259-a70b-281b1bd3da9c",
+            "name": "easy",
+            "color": "green",
+            "description": null
+          },
+          {
+            "id": "8f9c1661-4034-46a1-852f-049944a131f3",
+            "name": "Shakespeare",
+            "color": "yellow",
+            "description": null
+          }
+        ]
+      }
+    },
+    "Song Playlists": {
+      "id": "CUMU",
+      "name": "Song Playlists",
+      "description": null,
+      "type": "rollup",
+      "rollup": {
+        "rollup_property_name": "Playlists - Songs",
+        "relation_property_name": "Song",
+        "rollup_property_id": "vkqG",
+        "relation_property_id": "OGpB",
+        "function": "show_original"
+      }
+    },
+    "CreatedFor": {
+      "id": "ItXg",
+      "name": "CreatedFor",
+      "description": null,
+      "type": "formula",
+      "formula": {
+        "expression": "{{notion:block_property:CUMU:00000000-0000-0000-0000-000000000000:0fa5965f-f501-4cec-9b23-dcc729be1ed3}}.map(current.{{notion:block_property:HJBZ:5b0f6317-af53-401f-9741-3f862542f6cf:0fa5965f-f501-4cec-9b23-dcc729be1ed3}})"
+      }
+    },
+    "Automation Complete": {
+      "id": "L_LI",
+      "name": "Automation Complete",
+      "description": null,
+      "type": "checkbox",
+      "checkbox": {}
+    },
+    "Playlist Order": {
+      "id": "LtcM",
+      "name": "Playlist Order",
+      "description": null,
+      "type": "number",
+      "number": {
+        "format": "number"
+      }
+    },
+    "Song": {
+      "id": "OGpB",
+      "name": "Song",
+      "description": null,
+      "type": "relation",
+      "relation": {
+        "database_id": "8ccd2adb-8912-493c-afe1-1b06c3433828",
+        "data_source_id": "ab1af193-7eb2-4874-97de-01d733f0efa0",
+        "type": "dual_property",
+        "dual_property": {
+          "synced_property_name": "🗣️ Jessie Playlist Songs",
+          "synced_property_id": "P%7BfG"
+        }
+      }
+    },
+    "Song-Release Year": {
+      "id": "OfUS",
+      "name": "Song-Release Year",
+      "description": null,
+      "type": "rollup",
+      "rollup": {
+        "rollup_property_name": "Release Year",
+        "relation_property_name": "Song",
+        "rollup_property_id": "DE>?",
+        "relation_property_id": "OGpB",
+        "function": "show_original"
+      }
+    },
+    "tags": {
+      "id": "Os%3AY",
+      "name": "tags",
+      "description": null,
+      "type": "multi_select",
+      "multi_select": {
+        "options": [
+          {
+            "id": "d73030bb-c7fb-4c96-851b-f41586c299fd",
+            "name": "sex",
+            "color": "purple",
+            "description": null
+          },
+          {
+            "id": "4347b85b-6b20-43fb-832c-5aa34ae8d1f1",
+            "name": "romance",
+            "color": "red",
+            "description": null
+          },
+          {
+            "id": "22a6d4fe-82be-4984-9eda-545f75c6f03d",
+            "name": "unity",
+            "color": "green",
+            "description": null
+          },
+          {
+            "id": "fb6aa7e2-5f14-454b-bb9f-9ac6c79e579c",
+            "name": "explicit",
+            "color": "gray",
+            "description": null
+          },
+          {
+            "id": "4e4380eb-9313-4697-94cd-d596564dba9c",
+            "name": "blasphemy",
+            "color": "orange",
+            "description": null
+          },
+          {
+            "id": "55775093-2528-4609-93b9-d61882420f0e",
+            "name": "joy",
+            "color": "blue",
+            "description": null
+          },
+          {
+            "id": "10722562-008d-4df4-b3d5-1067cf474b51",
+            "name": "drugs",
+            "color": "pink",
+            "description": null
+          },
+          {
+            "id": "17a56268-0525-4f8a-a9cc-68f7555cb065",
+            "name": "apocalypse",
+            "color": "gray",
+            "description": null
+          },
+          {
+            "id": "63e64da3-3669-459f-9890-69f529b20a8e",
+            "name": "victory",
+            "color": "blue",
+            "description": null
+          },
+          {
+            "id": "790b5a4b-d33f-45cf-96cf-3d4342ef97fa",
+            "name": "resist",
+            "color": "red",
+            "description": null
+          },
+          {
+            "id": "54ac07c4-d07e-4120-a6c7-98b22f045e35",
+            "name": "onlyeverything",
+            "color": "brown",
+            "description": null
+          },
+          {
+            "id": "f6a85d79-d59f-462f-80de-7173cfd80891",
+            "name": "found",
+            "color": "default",
+            "description": null
+          },
+          {
+            "id": "04e56723-8b32-4fbe-92d2-c2a15799a8b2",
+            "name": "support",
+            "color": "yellow",
+            "description": null
+          },
+          {
+            "id": "32206308-fc83-49c8-b0a5-118407b8a40b",
+            "name": "go-anywhere",
+            "color": "yellow",
+            "description": null
+          },
+          {
+            "id": "e0b4e6e4-228a-4991-94aa-fbfcff5fb132",
+            "name": "touch",
+            "color": "orange",
+            "description": null
+          },
+          {
+            "id": "fd463ada-a92d-4854-add7-2375ab6ddf6f",
+            "name": "shine",
+            "color": "brown",
+            "description": null
+          },
+          {
+            "id": "41b0d288-7ab1-4442-865e-3d610602c048",
+            "name": "robots",
+            "color": "green",
+            "description": null
+          }
+        ]
+      }
+    },
+    "Song-Artist": {
+      "id": "%5CFsF",
+      "name": "Song-Artist",
+      "description": null,
+      "type": "rollup",
+      "rollup": {
+        "rollup_property_name": "Song Artists",
+        "relation_property_name": "Song",
+        "rollup_property_id": "dVgH",
+        "relation_property_id": "OGpB",
+        "function": "show_original"
+      }
+    },
+    "Song-Owned": {
+      "id": "bDz%40",
+      "name": "Song-Owned",
+      "description": null,
+      "type": "rollup",
+      "rollup": {
+        "rollup_property_name": "Owned",
+        "relation_property_name": "Song",
+        "rollup_property_id": "[\\S?",
+        "relation_property_id": "OGpB",
+        "function": "show_original"
+      }
+    },
+    "Playlist Creator": {
+      "id": "bY_%5D",
+      "name": "Playlist Creator",
+      "description": null,
+      "type": "rollup",
+      "rollup": {
+        "rollup_property_name": "Created by",
+        "relation_property_name": "Jessie Playlist",
+        "rollup_property_id": "mvZC",
+        "relation_property_id": "}TlU",
+        "function": "show_original"
+      }
+    },
+    "👩🏼‍🎤 Song Artists": {
+      "id": "i%3CYD",
+      "name": "👩🏼‍🎤 Song Artists",
+      "description": null,
+      "type": "relation",
+      "relation": {
+        "database_id": "d5367ed0-480a-4ccc-9ad4-bda5e56fbf91",
+        "data_source_id": "71a622ef-2705-4598-be2c-319998359242",
+        "type": "single_property",
+        "single_property": {}
+      }
+    },
+    "complete": {
+      "id": "ji_U",
+      "name": "complete",
+      "description": null,
+      "type": "checkbox",
+      "checkbox": {}
+    },
+    "Genre": {
+      "id": "qVfC",
+      "name": "Genre",
+      "description": null,
+      "type": "multi_select",
+      "multi_select": {
+        "options": [
+          {
+            "id": "37e2ee6f-596e-4780-8a6d-71787d27ab8d",
+            "name": "indie",
+            "color": "green",
+            "description": null
+          },
+          {
+            "id": "b0397438-a4a1-4643-b98f-e5cc83068a05",
+            "name": "pop",
+            "color": "default",
+            "description": null
+          },
+          {
+            "id": "1456621c-6a13-4021-bc42-5a336372fbe4",
+            "name": "folk",
+            "color": "blue",
+            "description": null
+          },
+          {
+            "id": "16bb59fc-ce65-4fe7-8002-800165af3d9c",
+            "name": "neo-mid-century modern",
+            "color": "gray",
+            "description": null
+          },
+          {
+            "id": "b5d95218-84b0-4644-91d1-6b70dc4426a9",
+            "name": "neo-psychedelia",
+            "color": "gray",
+            "description": null
+          },
+          {
+            "id": "c59cdfda-1b4d-409f-9623-253e242835ee",
+            "name": "dance",
+            "color": "red",
+            "description": null
+          },
+          {
+            "id": "5c7af509-a5d9-4347-b771-4807ef9f12eb",
+            "name": "electronic",
+            "color": "blue",
+            "description": null
+          },
+          {
+            "id": "b8033eb0-7f96-4e9a-a2cf-a0342c2937b7",
+            "name": "americana",
+            "color": "default",
+            "description": null
+          },
+          {
+            "id": "e615a355-15ed-417f-a72e-8cb0f33b23fb",
+            "name": "hip-hop",
+            "color": "red",
+            "description": null
+          },
+          {
+            "id": "0d785e74-0566-4a13-adbf-2951816edd76",
+            "name": "country",
+            "color": "brown",
+            "description": null
+          },
+          {
+            "id": "92d848e8-2749-49cc-9203-3965e00cb6d7",
+            "name": "soul",
+            "color": "orange",
+            "description": null
+          },
+          {
+            "id": "dcbcfa9e-4238-4b04-9707-32afbf6ed4b5",
+            "name": "r&b",
+            "color": "pink",
+            "description": null
+          },
+          {
+            "id": "95a0d7c6-59eb-4710-89a3-cce4822b439a",
+            "name": "trap",
+            "color": "purple",
+            "description": null
+          },
+          {
+            "id": "3f8b664e-5162-47f3-9d85-fbc3c373fbe0",
+            "name": "waltz",
+            "color": "yellow",
+            "description": null
+          },
+          {
+            "id": "941b7ab8-16fc-4e4b-8347-9a9ae7bde9bf",
+            "name": "carribean",
+            "color": "gray",
+            "description": null
+          },
+          {
+            "id": "af270f3a-c82e-405d-b10f-9be12b4388b3",
+            "name": "funk",
+            "color": "orange",
+            "description": null
+          },
+          {
+            "id": "3b4f8e7d-3313-4ec5-97a0-6b69b23aeb3c",
+            "name": "synthpop",
+            "color": "green",
+            "description": null
+          },
+          {
+            "id": "9c31e953-a2a7-4237-8cb3-77214b63162a",
+            "name": "hyperpop",
+            "color": "green",
+            "description": null
+          },
+          {
+            "id": "4848449b-32a3-4667-8a7a-fd6e86f3f0b8",
+            "name": "aggro pop",
+            "color": "yellow",
+            "description": null
+          },
+          {
+            "id": "8a06290a-d7db-46a7-abe1-04facdb15b14",
+            "name": "nu-disco",
+            "color": "pink",
+            "description": null
+          },
+          {
+            "id": "f78a96d4-4e4c-44ff-a57d-d5eab72a9cc1",
+            "name": "dream pop",
+            "color": "red",
+            "description": null
+          },
+          {
+            "id": "09b0bf2f-c3eb-4356-a4d8-4bcb9e3ce8d7",
+            "name": "rock",
+            "color": "purple",
+            "description": null
+          },
+          {
+            "id": "c02155f7-b5b3-46f8-a42a-436f518dcf51",
+            "name": "pop rap",
+            "color": "pink",
+            "description": null
+          },
+          {
+            "id": "6a6fb6be-bd0c-491d-a992-7f888e3a74ae",
+            "name": "funkatronic",
+            "color": "brown",
+            "description": null
+          },
+          {
+            "id": "86484da9-7721-47cb-a655-7805a9542b9c",
+            "name": "bossnova",
+            "color": "default",
+            "description": null
+          },
+          {
+            "id": "ecf260a4-4a88-4332-bee2-fac41edeb50d",
+            "name": "indietronica",
+            "color": "brown",
+            "description": null
+          },
+          {
+            "id": "6d0f7946-5391-417e-be25-23b47fc4a9dc",
+            "name": "post-rock",
+            "color": "gray",
+            "description": null
+          }
+        ]
+      }
+    },
+    "Jessie Playlist": {
+      "id": "%7DTlU",
+      "name": "Jessie Playlist",
+      "description": null,
+      "type": "relation",
+      "relation": {
+        "database_id": "5b0f6317-af53-401f-9741-3f862542f6cf",
+        "data_source_id": "d23c2bd2-780d-405c-90c7-c95edb469dad",
+        "type": "dual_property",
+        "dual_property": {
+          "synced_property_name": "Playlist Songs",
+          "synced_property_id": "ZL%60t"
+        }
+      }
+    },
+    "Name": {
+      "id": "title",
+      "name": "Name",
+      "description": null,
+      "type": "title",
+      "title": {}
+    }
+  }
+}
