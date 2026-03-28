@@ -5,6 +5,8 @@
 # Generated at runtime
 playlist_cache.json
 etl_log_*.txt
+lyrics/
+tracks/
 
 # Python
 .venv/
