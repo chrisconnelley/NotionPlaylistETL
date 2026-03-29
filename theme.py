@@ -75,6 +75,24 @@ def apply_theme(root: tk.Tk) -> None:
     s.configure("TLabelframe", background=BG, bordercolor=ELEVATED)
     s.configure("TLabelframe.Label", background=BG, foreground=TEXT_DIM)
 
+    s.configure("TCombobox",
+                fieldbackground=SURFACE, background=ELEVATED,
+                foreground=TEXT, selectbackground=SELECT,
+                selectforeground=TEXT, bordercolor=ELEVATED,
+                arrowcolor=TEXT)
+    s.map("TCombobox",
+          fieldbackground=[("readonly", SURFACE), ("disabled", BG)],
+          selectbackground=[("readonly", SURFACE)],
+          selectforeground=[("readonly", TEXT)],
+          foreground=[("readonly", TEXT), ("disabled", TEXT_DIM)],
+          background=[("active", SELECT), ("readonly", ELEVATED)])
+
+    # Style the dropdown listbox (plain tk widget, not ttk)
+    root.option_add("*TCombobox*Listbox.background", SURFACE)
+    root.option_add("*TCombobox*Listbox.foreground", TEXT)
+    root.option_add("*TCombobox*Listbox.selectBackground", GREEN)
+    root.option_add("*TCombobox*Listbox.selectForeground", TEXT)
+
 
 def make_icon() -> "tk.PhotoImage | None":
     try:
