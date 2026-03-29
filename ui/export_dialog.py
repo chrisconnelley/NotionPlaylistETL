@@ -2,16 +2,11 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from config import NOTION_JESSIE_PLAYLISTS_DB_ID, NOTION_TERI_PLAYLISTS_DB_ID
+from config import NOTION_PLAYLISTS_DB_ID
 from logger import log
 from notion import export_tracks, export_playlist, export_playlist_songs, validate_registry
 from theme import BG, SURFACE, TEXT, TEXT_DIM
 from ui.match_dialog import NotionMatchDialog
-
-_DB_OPTIONS = {
-    "Jessie & Chris's Playlists": NOTION_JESSIE_PLAYLISTS_DB_ID,
-    "Teri & Chris's Playlists":   NOTION_TERI_PLAYLISTS_DB_ID,
-}
 
 
 class ExportDialog(tk.Toplevel):
@@ -57,14 +52,6 @@ class ExportDialog(tk.Toplevel):
         ttk.Label(self, text=self._playlist["name"],
                   foreground=TEXT_DIM).pack(padx=16, pady=(0, 8), anchor="w")
 
-        db_frame = ttk.Frame(self)
-        db_frame.pack(fill="x", padx=16, pady=(0, 8))
-        ttk.Label(db_frame, text="Destination:").pack(side="left")
-        self._db_var = tk.StringVar(value=list(_DB_OPTIONS)[0])
-        self._db_combo = ttk.Combobox(db_frame, textvariable=self._db_var,
-                                      values=list(_DB_OPTIONS), state="readonly", width=28)
-        self._db_combo.pack(side="left", padx=(8, 0))
-
         if self._missing_count:
             warn = (f"⚠  {self._missing_count} track(s) are missing artist ID data.\n"
                     "   Please click Refresh in the playlist tab first.")
@@ -73,22 +60,22 @@ class ExportDialog(tk.Toplevel):
 
         ttk.Separator(self, orient="horizontal").pack(fill="x", padx=16, pady=(0, 10))
 
-        # Phase 1 — Songs & Artists
-        ttk.Label(self, text=f"Phase 1 — Songs & Artists  ({n} track{'s' if n != 1 else ''})",
+        # Phase 1 — Playlist Record
+        ttk.Label(self, text="Phase 1 — Playlist Record",
                   font=(None, 9, "bold")).pack(padx=16, anchor="w")
         self._p1_status = tk.StringVar(value="Ready.")
         ttk.Label(self, textvariable=self._p1_status,
-                  foreground=TEXT_DIM).pack(padx=16, pady=(2, 4), anchor="w")
-        self._p1_bar = ttk.Progressbar(self, mode="determinate",
-                                        maximum=max(n, 1), length=360)
-        self._p1_bar.pack(padx=16, pady=(0, 10))
+                  foreground=TEXT_DIM).pack(padx=16, pady=(2, 10), anchor="w")
 
-        # Phase 2 — Playlist Record
-        ttk.Label(self, text="Phase 2 — Playlist Record",
+        # Phase 2 — Songs & Artists
+        ttk.Label(self, text=f"Phase 2 — Songs & Artists  ({n} track{'s' if n != 1 else ''})",
                   font=(None, 9, "bold")).pack(padx=16, anchor="w")
         self._p2_status = tk.StringVar(value="")
         ttk.Label(self, textvariable=self._p2_status,
-                  foreground=TEXT_DIM).pack(padx=16, pady=(2, 10), anchor="w")
+                  foreground=TEXT_DIM).pack(padx=16, pady=(2, 4), anchor="w")
+        self._p2_bar = ttk.Progressbar(self, mode="determinate",
+                                        maximum=max(n, 1), length=360)
+        self._p2_bar.pack(padx=16, pady=(0, 10))
 
         # Phase 3 — Playlist Songs
         ttk.Label(self, text=f"Phase 3 — Playlist Songs  ({n} track{'s' if n != 1 else ''})",
@@ -152,7 +139,6 @@ class ExportDialog(tk.Toplevel):
 
     def _start(self):
         self._start_btn.configure(state="disabled")
-        self._db_combo.configure(state="disabled")
         self._close_btn.configure(text="Cancel")
         self._stop_event.clear()
         threading.Thread(target=self._run, daemon=True).start()
@@ -166,55 +152,10 @@ class ExportDialog(tk.Toplevel):
             done_event.wait()
             return result_holder.get("choice")
 
-        db_id = _DB_OPTIONS[self._db_var.get()]
+        db_id = NOTION_PLAYLISTS_DB_ID
 
-        # ── Phase 1: Songs & Artists ─────────────────────────────────
-        self.after(0, self._p1_status.set, "Exporting…")
-
-        def p1_progress(current, total, track_name):
-            self.after(0, self._p1_bar.configure, {"value": current})
-            self.after(0, self._p1_status.set,
-                       f"Track {current} / {total}" +
-                       (f"  —  {track_name[:50]}" if track_name else ""))
-
-        def status_cb(spotify_url, display_status):
-            self.after(0, self._parent_tab.update_notion_status, spotify_url, display_status)
-
-        def artist_status_cb(spotify_url, display_status):
-            self.after(0, self._parent_tab.update_artist_notion_status,
-                       spotify_url, display_status)
-
-        try:
-            tracks_summary = export_tracks(
-                self._tracks, self._sp,
-                progress_cb=p1_progress,
-                status_cb=status_cb,
-                artist_status_cb=artist_status_cb,
-                stop_event=self._stop_event,
-                match_cb=match_cb,
-                verify_batch=self._verify_var.get(),
-            )
-        except ValueError as exc:
-            self.after(0, self._show_error, str(exc))
-            return
-        except Exception:
-            import traceback
-            self.after(0, self._show_error, traceback.format_exc().splitlines()[-1])
-            return
-
-        if self._stop_event.is_set():
-            self.after(0, self._p1_status.set, "Cancelled.")
-            self.after(0, self._close_btn.configure, {"text": "Close"})
-            return
-
-        p1_done = (f"✓ {tracks_summary['added_songs']} added  "
-                   f"— {tracks_summary['existing_songs']} already in Notion"
-                   + (f"  ✗ {len(tracks_summary['errors'])} error(s)"
-                      if tracks_summary["errors"] else ""))
-        self.after(0, self._p1_status.set, p1_done)
-
-        # ── Phase 2: Playlist Record ─────────────────────────────────
-        self.after(0, self._p2_status.set, "Exporting playlist record…")
+        # ── Phase 1: Playlist Record ──────────────────────────────────
+        self.after(0, self._p1_status.set, "Creating/verifying playlist…")
 
         playlist = dict(self._playlist)
         if self._sp:
@@ -235,16 +176,66 @@ class ExportDialog(tk.Toplevel):
             return
 
         if pl_result["status"] == "added":
-            p2_msg = f"✓ Created: {pl_result['name']}"
+            p1_msg = f"✓ Created: {pl_result['name']}"
         elif pl_result["status"] == "pre_existing":
-            p2_msg = f"✓ Already in Notion: {pl_result['name']}"
+            p1_msg = f"✓ Already in Notion: {pl_result['name']}"
         else:
-            p2_msg = "— Playlist skipped by user."
-        self.after(0, self._p2_status.set, p2_msg)
+            p1_msg = "— Playlist skipped by user."
+            self.after(0, self._p1_status.set, p1_msg)
+            self.after(0, self._p2_status.set, "— Skipped (playlist not created)")
+            self.after(0, self._p3_status.set, "— Skipped (playlist not created)")
+            self.after(0, self._close_btn.configure, {"text": "Close"})
+            return
+        self.after(0, self._p1_status.set, p1_msg)
 
         if self._stop_event.is_set():
             self.after(0, self._close_btn.configure, {"text": "Close"})
             return
+
+        # ── Phase 2: Songs & Artists ─────────────────────────────────
+        self.after(0, self._p2_status.set, "Exporting…")
+
+        def p2_progress(current, total, track_name):
+            self.after(0, self._p2_bar.configure, {"value": current})
+            self.after(0, self._p2_status.set,
+                       f"Track {current} / {total}" +
+                       (f"  —  {track_name[:50]}" if track_name else ""))
+
+        def status_cb(spotify_url, display_status):
+            self.after(0, self._parent_tab.update_notion_status, spotify_url, display_status)
+
+        def artist_status_cb(spotify_url, display_status):
+            self.after(0, self._parent_tab.update_artist_notion_status,
+                       spotify_url, display_status)
+
+        try:
+            tracks_summary = export_tracks(
+                self._tracks, self._sp,
+                progress_cb=p2_progress,
+                status_cb=status_cb,
+                artist_status_cb=artist_status_cb,
+                stop_event=self._stop_event,
+                match_cb=match_cb,
+                verify_batch=self._verify_var.get(),
+            )
+        except ValueError as exc:
+            self.after(0, self._show_error, str(exc))
+            return
+        except Exception:
+            import traceback
+            self.after(0, self._show_error, traceback.format_exc().splitlines()[-1])
+            return
+
+        if self._stop_event.is_set():
+            self.after(0, self._p2_status.set, "Cancelled.")
+            self.after(0, self._close_btn.configure, {"text": "Close"})
+            return
+
+        p2_done = (f"✓ {tracks_summary['added_songs']} added  "
+                   f"— {tracks_summary['existing_songs']} already in Notion"
+                   + (f"  ✗ {len(tracks_summary['errors'])} error(s)"
+                      if tracks_summary["errors"] else ""))
+        self.after(0, self._p2_status.set, p2_done)
 
         # ── Phase 3: Playlist Songs ───────────────────────────────────
         self.after(0, self._p3_status.set, "Exporting playlist songs…")

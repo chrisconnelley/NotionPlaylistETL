@@ -1,5 +1,5 @@
 {
-  "name": "Jessie Playlist Songs",
+  "name": "Playlist Songs",
   "data_source_id": "a1720dcb-2368-4e34-8d9d-c2c375eac101",
   "database_id": "93b98cda-f7c4-4699-9eb2-a518feb9b7ac",
   "description": "",
@@ -164,28 +164,6 @@
         ]
       }
     },
-    "Song Playlists": {
-      "id": "CUMU",
-      "name": "Song Playlists",
-      "description": null,
-      "type": "rollup",
-      "rollup": {
-        "rollup_property_name": "Playlists - Songs",
-        "relation_property_name": "Song",
-        "rollup_property_id": "vkqG",
-        "relation_property_id": "OGpB",
-        "function": "show_original"
-      }
-    },
-    "CreatedFor": {
-      "id": "ItXg",
-      "name": "CreatedFor",
-      "description": null,
-      "type": "formula",
-      "formula": {
-        "expression": "{{notion:block_property:CUMU:00000000-0000-0000-0000-000000000000:0fa5965f-f501-4cec-9b23-dcc729be1ed3}}.map(current.{{notion:block_property:HJBZ:5b0f6317-af53-401f-9741-3f862542f6cf:0fa5965f-f501-4cec-9b23-dcc729be1ed3}})"
-      }
-    },
     "Automation Complete": {
       "id": "L_LI",
       "name": "Automation Complete",
@@ -212,7 +190,7 @@
         "data_source_id": "ab1af193-7eb2-4874-97de-01d733f0efa0",
         "type": "dual_property",
         "dual_property": {
-          "synced_property_name": "🗣️ Jessie Playlist Songs",
+          "synced_property_name": "Playlist Songs",
           "synced_property_id": "P%7BfG"
         }
       }
@@ -375,7 +353,7 @@
       "type": "rollup",
       "rollup": {
         "rollup_property_name": "Created by",
-        "relation_property_name": "Jessie Playlist",
+        "relation_property_name": "Playlist",
         "rollup_property_id": "mvZC",
         "relation_property_id": "}TlU",
         "function": "show_original"
@@ -572,9 +550,9 @@
         ]
       }
     },
-    "Jessie Playlist": {
+    "Playlist": {
       "id": "%7DTlU",
-      "name": "Jessie Playlist",
+      "name": "Playlist",
       "description": null,
       "type": "relation",
       "relation": {

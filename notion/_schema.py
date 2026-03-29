@@ -80,16 +80,25 @@ def snapshot_schema() -> list:
         raise ValueError("NOTION_API_KEY is not set in .env")
 
     os.makedirs(SCHEMA_DIR, exist_ok=True)
+    log.info("Fetching list of Notion databases…")
     databases = fetch_databases()
+
+    log.info("Resolving data source IDs to database IDs…")
     id_map = _resolve_database_ids()
+    log.info("Resolved %d data source(s)", len(id_map))
 
     saved = []
-    for db in databases:
+    failed = []
+    for i, db in enumerate(databases, 1):
         database_id = id_map.get(db["id"], db["id"])
+        log.info("Fetching schema for database %d/%d: %r", i, len(databases), db["name"])
         try:
             detail = _notion_get(f"databases/{database_id}")
             title_parts = detail.get("title", [])
             name = "".join(t.get("plain_text", "") for t in title_parts).strip() or db["name"]
+
+            properties = detail.get("properties", {})
+            log.info("  Found %d properties in %r", len(properties), name)
 
             schema = {
                 "name": name,
@@ -100,7 +109,7 @@ def snapshot_schema() -> list:
                     for block in detail.get("description", [])
                     for t in ([block] if isinstance(block, dict) else [])
                 ),
-                "properties": detail.get("properties", {}),
+                "properties": properties,
             }
 
             safe_name = re.sub(r'[\\/*?:"<>| ]', "_", name).lower()
@@ -108,11 +117,14 @@ def snapshot_schema() -> list:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(schema, f, ensure_ascii=False, indent=2)
             saved.append(name)
-            log.debug("Saved schema: %s → %s", name, path)
+            log.info("  ✓ Saved schema to: %s", path)
 
-        except Exception:
-            log.warning("Could not snapshot schema for %r:\n%s",
-                        db["name"], traceback.format_exc())
+        except Exception as e:
+            failed.append(db["name"])
+            log.warning("Could not snapshot schema for %r: %s",
+                        db["name"], str(e))
 
-    log.info("Snapshotted %d database schema(s) to %s", len(saved), SCHEMA_DIR)
+    log.info("Schema verification complete: %d saved, %d failed", len(saved), len(failed))
+    if failed:
+        log.warning("Failed databases: %s", ", ".join(failed))
     return saved

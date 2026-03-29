@@ -26,7 +26,7 @@
       "description": "",
       "type": "rollup",
       "rollup": {
-        "rollup_property_name": "🗣️ Jessie Playlist Songs",
+        "rollup_property_name": "Playlist Songs",
         "relation_property_name": "Songs",
         "rollup_property_id": "P{fG",
         "relation_property_id": "bEil",

@@ -2,26 +2,17 @@ import time
 import traceback
 from datetime import datetime, timezone
 
-from config import (NOTION_JESSIE_PLAYLISTS_DB_ID, NOTION_TERI_PLAYLISTS_DB_ID,
-                    NOTION_JESSIE_PL_SONGS_DB_ID, NOTION_TERI_PL_SONGS_DB_ID)
+from config import NOTION_PLAYLISTS_DB_ID, NOTION_PLAYLIST_SONGS_DB_ID
 from logger import log
 from notion._api import _notion_post, _notion_request, _notion_get
-from notion._artists import _ensure_artist
-from notion._songs import _ensure_song
-from notion._registry import load_registry, save_registry
+from notion._artists import _ensure_artist, _batch_lookup_artists
+from notion._songs import _ensure_song, _batch_lookup_songs
 
-# Maps the playlist DB (chosen by user) to the playlist songs DB + relation property names.
-_PLAYLIST_SONGS_DB = {
-    NOTION_JESSIE_PLAYLISTS_DB_ID: {
-        "db_id":             NOTION_JESSIE_PL_SONGS_DB_ID,
-        "song_relation":     "Song",
-        "playlist_relation": "Jessie Playlist",
-    },
-    NOTION_TERI_PLAYLISTS_DB_ID: {
-        "db_id":             NOTION_TERI_PL_SONGS_DB_ID,
-        "song_relation":     "Songs",
-        "playlist_relation": "▶️ Teri & Chris\u2019s Playlists",
-    },
+# Playlist songs database configuration
+_PLAYLIST_SONGS_CONFIG = {
+    "db_id":             NOTION_PLAYLIST_SONGS_DB_ID,
+    "song_relation":     "Song",
+    "playlist_relation": "Playlist",
 }
 
 
@@ -135,7 +126,7 @@ def _repair_playlist_song(page_id: str, song_page_id: str,
                           playlist_page_id: str, artist_page_ids: list,
                           db_config: dict) -> "bool | None":
     """PATCH missing relations on an existing playlist song page.
-    Returns True=repaired, False=already correct, None=wrong DB (skip).
+    Returns True=repaired, False=already correct, None=wrong DB or archived (skip).
     """
     page = _notion_get(f"pages/{page_id}")
 
@@ -144,6 +135,11 @@ def _repair_playlist_song(page_id: str, song_page_id: str,
     if parent_db != expected_db:
         log.warning("Playlist song %s belongs to DB %s, expected %s — skipping repair",
                     page_id[:12], parent_db[:8], expected_db[:8])
+        return None
+
+    # Skip patching if the page is archived (can't edit archived pages)
+    if page.get("archived"):
+        log.debug("Playlist song %s is archived — skipping repair", page_id[:12])
         return None
 
     props = page.get("properties", {})
@@ -167,43 +163,39 @@ def _repair_playlist_song(page_id: str, song_page_id: str,
     if not patch:
         return False
 
-    _notion_request("PATCH", f"pages/{page_id}", json={"properties": patch})
-    log.info("Repaired playlist song %s: set %s", page_id[:12], ", ".join(patch.keys()))
-    return True
+    try:
+        _notion_request("PATCH", f"pages/{page_id}", json={"properties": patch})
+        log.info("Repaired playlist song %s: set %s", page_id[:12], ", ".join(patch.keys()))
+        return True
+    except Exception as e:
+        # If patching fails due to archived blocks, skip gracefully
+        if "archived" in str(e).lower():
+            log.debug("Playlist song %s has archived blocks — skipping repair", page_id[:12])
+            return None
+        # Re-raise other errors
+        raise
 
 
 def _ensure_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
                           artist_page_ids: list, track_num: int,
                           playlist_spotify_id: str, registry: dict,
                           db_config: dict) -> str:
-    """Ensure a playlist song record exists with correct relations. Idempotent."""
+    """Ensure a playlist song record exists with correct relations. Idempotent.
+    Always checks Notion first. Registry is write-only (no caching).
+    """
     spotify_url = track.get("Spotify URL", "")
     reg_key = f"{playlist_spotify_id}:{spotify_url}"
     now = datetime.now(timezone.utc).isoformat()
 
     existing_id = None
 
-    # Step 1: check registry
-    if reg_key in registry:
-        existing_id = registry[reg_key]["notion_page_id"]
-        time.sleep(0.35)
-        repair_result = _repair_playlist_song(
-            existing_id, song_page_id, playlist_page_id, artist_page_ids, db_config)
-        if repair_result is None:
-            log.info("Clearing stale registry entry for %r (wrong DB)", track["Track Name"])
-            del registry[reg_key]
-            existing_id = None
-        else:
-            return "repaired" if repair_result else "pre_existing"
-
-    # Step 2: search Notion
-    if not existing_id:
-        time.sleep(0.35)
-        existing_id = _find_playlist_song(
-            song_page_id, playlist_page_id,
-            db_config["db_id"], db_config["song_relation"],
-            db_config["playlist_relation"], track_name=track["Track Name"],
-        )
+    # Step 1: search Notion (always check Notion first, don't use registry cache)
+    time.sleep(0.35)
+    existing_id = _find_playlist_song(
+        song_page_id, playlist_page_id,
+        db_config["db_id"], db_config["song_relation"],
+        db_config["playlist_relation"], track_name=track["Track Name"],
+    )
 
     if existing_id:
         time.sleep(0.35)
@@ -241,22 +233,34 @@ def export_playlist_songs(tracks: list, playlist_spotify_id: str,
     Tracks are only skipped if they have no Spotify URL.
     Returns a summary dict.
     """
-    db_config = _PLAYLIST_SONGS_DB.get(playlists_db_id)
-    if not db_config:
-        raise ValueError(f"No playlist songs DB configured for playlist DB {playlists_db_id}")
+    from notion._playlists import _find_playlist_by_spotify_url
 
-    playlists_reg = load_registry("playlists")
-    songs_reg     = load_registry("songs")
-    artists_reg   = load_registry("artists")
-    pl_songs_reg  = load_registry("playlist_songs")
+    db_config = _PLAYLIST_SONGS_CONFIG
 
-    playlist_entry = playlists_reg.get(playlist_spotify_id)
-    if not playlist_entry:
+    # Write-only registries for tracking created items
+    songs_reg     = {}
+    artists_reg   = {}
+    pl_songs_reg  = {}
+
+    # Pre-flight batch lookup: check Notion for songs/artists by Spotify ID/URL
+    unregistered_urls = [t["Spotify URL"] for t in tracks if t.get("Spotify URL")]
+    unregistered_artist_ids = list({a["id"] for t in tracks for a in t.get("Artists", [])})
+    if unregistered_urls:
+        _batch_lookup_songs(unregistered_urls, songs_reg)
+    if unregistered_artist_ids:
+        _batch_lookup_artists(unregistered_artist_ids, artists_reg)
+
+    # Find the playlist in Notion by Spotify ID (instead of relying on registry)
+    spotify_url = f"https://open.spotify.com/playlist/{playlist_spotify_id}"
+    playlist_lookup = _find_playlist_by_spotify_url(spotify_url, playlists_db_id)
+    if not playlist_lookup:
+        log.error("Playlist with Spotify ID %r not found in Notion database %r",
+                  playlist_spotify_id, playlists_db_id)
         raise ValueError(
-            f"Playlist {playlist_spotify_id!r} not found in playlists registry. "
-            "Export the playlist to Notion first."
+            f"Playlist {playlist_spotify_id!r} not found in Notion. "
+            "Export the playlist to Notion first (Phase 2)."
         )
-    playlist_page_id = playlist_entry["notion_page_id"]
+    playlist_page_id, _ = playlist_lookup
 
     # Pre-fetch Spotify artist details for any not yet in registry
     missing_artist_ids = list({
@@ -341,10 +345,6 @@ def export_playlist_songs(tracks: list, playlist_spotify_id: str,
                 "track": track.get("Track Name"),
                 "error": err.splitlines()[-1],
             })
-
-    save_registry("artists", artists_reg)
-    save_registry("songs", songs_reg)
-    save_registry("playlist_songs", pl_songs_reg)
 
     if progress_cb:
         progress_cb(len(tracks), len(tracks), "")

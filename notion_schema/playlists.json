@@ -1,8 +1,8 @@
 {
-  "name": "Jessie & Chris’s Playlists",
+  "name": "Playlists",
   "data_source_id": "d23c2bd2-780d-405c-90c7-c95edb469dad",
   "database_id": "5b0f6317-af53-401f-9741-3f862542f6cf",
-  "description": "Playlists that Chris and Jessie trade to demonstrate how much they fucking love each other!\n",
+  "description": "Playlists that we trade to demonstrate how much we fucking love each other!\n",
   "properties": {
     "Tracks": {
       "id": "Gy%3D%3C",
@@ -59,7 +59,7 @@
         "data_source_id": "a1720dcb-2368-4e34-8d9d-c2c375eac101",
         "type": "dual_property",
         "dual_property": {
-          "synced_property_name": "Jessie Playlist",
+          "synced_property_name": "Playlist",
           "synced_property_id": "%7DTlU"
         }
       }
@@ -86,6 +86,13 @@
       "formula": {
         "expression": "{{notion:block_property:Gy%3D%3C:00000000-0000-0000-0000-000000000000:0fa5965f-f501-4cec-9b23-dcc729be1ed3}}== {{notion:block_property:Mq%3C%3C:00000000-0000-0000-0000-000000000000:0fa5965f-f501-4cec-9b23-dcc729be1ed3}}"
       }
+    },
+    "Spotify URL": {
+      "id": "m_%5EA",
+      "name": "Spotify URL",
+      "description": null,
+      "type": "url",
+      "url": {}
     },
     "Playlist Cover": {
       "id": "oxuK",

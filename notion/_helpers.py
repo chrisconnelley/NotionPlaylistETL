@@ -8,6 +8,12 @@ from notion._api import _notion_get
 SKIP = "__skip__"
 
 
+def _chunks(lst: list, n: int):
+    """Yield successive chunks of size n from a list."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+
 def _apostrophe_variants(text: str) -> list:
     """Return the text plus versions with straight/curly apostrophes swapped."""
     straight = "\u0027"

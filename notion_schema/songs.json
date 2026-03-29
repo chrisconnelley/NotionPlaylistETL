@@ -22,24 +22,9 @@
         "format": "number"
       }
     },
-    "🗣️ Teri Playlist Songs": {
-      "id": "Dpk%5E",
-      "name": "🗣️ Teri Playlist Songs",
-      "description": null,
-      "type": "relation",
-      "relation": {
-        "database_id": "1c741983-beb5-8060-a39d-f8ba8b02f27b",
-        "data_source_id": "1c741983-beb5-81f1-81d2-000b5ea207b9",
-        "type": "dual_property",
-        "dual_property": {
-          "synced_property_name": "🎤 Teri Songs",
-          "synced_property_id": "ouY%40"
-        }
-      }
-    },
-    "🗣️ Jessie Playlist Songs": {
+    "Playlist Songs": {
       "id": "P%7BfG",
-      "name": "🗣️ Jessie Playlist Songs",
+      "name": "Playlist Songs",
       "description": null,
       "type": "relation",
       "relation": {
@@ -59,38 +44,18 @@
       "type": "url",
       "url": {}
     },
-    "Jessie Playlists": {
+    "Playlists": {
       "id": "W%5Bm%7C",
-      "name": "Jessie Playlists",
+      "name": "Playlists",
       "description": null,
       "type": "rollup",
       "rollup": {
-        "rollup_property_name": "Jessie Playlist",
-        "relation_property_name": "🗣️ Jessie Playlist Songs",
+        "rollup_property_name": "Playlist",
+        "relation_property_name": "Playlist Songs",
         "rollup_property_id": "}TlU",
         "relation_property_id": "P{fG",
         "function": "show_original"
       }
-    },
-    "Teri Playlists": {
-      "id": "X%5Ez%60",
-      "name": "Teri Playlists",
-      "description": null,
-      "type": "rollup",
-      "rollup": {
-        "rollup_property_name": "▶️ Teri & Chris’s Playlists",
-        "relation_property_name": "🗣️ Teri Playlist Songs",
-        "rollup_property_id": "L\\X<",
-        "relation_property_id": "Dpk^",
-        "function": "show_original"
-      }
-    },
-    "Add to Playlist": {
-      "id": "%5B%3C%7Bk",
-      "name": "Add to Playlist",
-      "description": null,
-      "type": "button",
-      "button": {}
     },
     "Owned": {
       "id": "%5B%5CS%3F",
@@ -99,27 +64,27 @@
       "type": "checkbox",
       "checkbox": {}
     },
-    "Jessie Track Order": {
+    "Track Order": {
       "id": "_tqx",
-      "name": "Jessie Track Order",
+      "name": "Track Order",
       "description": null,
       "type": "rollup",
       "rollup": {
         "rollup_property_name": "Playlist Order",
-        "relation_property_name": "🗣️ Jessie Playlist Songs",
+        "relation_property_name": "Playlist Songs",
         "rollup_property_id": "LtcM",
         "relation_property_id": "P{fG",
-        "function": "sum"
+        "function": "show_unique"
       }
     },
-    "Playlists": {
+    "Playlists Song > Playlist": {
       "id": "%60cTI",
-      "name": "Playlists",
+      "name": "Playlists Song > Playlist",
       "description": null,
       "type": "rollup",
       "rollup": {
-        "rollup_property_name": "Jessie Playlist",
-        "relation_property_name": "🗣️ Jessie Playlist Songs",
+        "rollup_property_name": "Playlist",
+        "relation_property_name": "Playlist Songs",
         "rollup_property_id": "}TlU",
         "relation_property_id": "P{fG",
         "function": "show_original"
@@ -145,50 +110,6 @@
           "synced_property_name": "Songs",
           "synced_property_id": "bEil"
         }
-      }
-    },
-    "Date": {
-      "id": "nMEq",
-      "name": "Date",
-      "description": null,
-      "type": "date",
-      "date": {}
-    },
-    "Jessie Songs (Teri?)": {
-      "id": "s%5BYa",
-      "name": "Jessie Songs (Teri?)",
-      "description": null,
-      "type": "relation",
-      "relation": {
-        "database_id": "1c741983-beb5-8060-a39d-f8ba8b02f27b",
-        "data_source_id": "1c741983-beb5-81f1-81d2-000b5ea207b9",
-        "type": "dual_property",
-        "dual_property": {
-          "synced_property_name": "Jessie Songs",
-          "synced_property_id": "OGpB"
-        }
-      }
-    },
-    "Playlists - Songs": {
-      "id": "vkqG",
-      "name": "Playlists - Songs",
-      "description": null,
-      "type": "formula",
-      "formula": {
-        "expression": "{{notion:block_property:%60cTI:00000000-0000-0000-0000-000000000000:0fa5965f-f501-4cec-9b23-dcc729be1ed3}}.map(current)"
-      }
-    },
-    "Teri Track Order": {
-      "id": "vvGL",
-      "name": "Teri Track Order",
-      "description": null,
-      "type": "rollup",
-      "rollup": {
-        "rollup_property_name": "Playlist Order",
-        "relation_property_name": "🗣️ Teri Playlist Songs",
-        "rollup_property_id": "LtcM",
-        "relation_property_id": "Dpk^",
-        "function": "show_original"
       }
     },
     "Album": {
