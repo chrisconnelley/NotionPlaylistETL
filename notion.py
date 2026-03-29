@@ -1162,14 +1162,25 @@ def _create_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
 
 def _repair_playlist_song(page_id: str, song_page_id: str,
                           playlist_page_id: str, artist_page_ids: list,
-                          db_config: dict) -> bool:
+                          db_config: dict) -> "bool | None":
     """Check an existing playlist song page and PATCH any missing relations.
 
-    Returns True if a repair was made, False if the record was already correct.
+    Returns True if a repair was made, False if already correct,
+    None if the page belongs to a different DB (caller should ignore this entry).
     """
     page = _notion_get(f"pages/{page_id}")
-    props = page.get("properties", {})
 
+    # Guard: only repair pages that belong to the expected DB
+    parent_db = page.get("parent", {}).get("database_id", "").replace("-", "")
+    expected_db = db_config["db_id"].replace("-", "")
+    if parent_db != expected_db:
+        log.warning(
+            "Playlist song %s belongs to DB %s, expected %s — skipping repair",
+            page_id[:12], parent_db[:8], expected_db[:8],
+        )
+        return None
+
+    props = page.get("properties", {})
     patch: dict = {}
 
     # Song relation
@@ -1221,11 +1232,23 @@ def _ensure_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
 
     existing_id = None
 
-    # Check registry first
+    # Step 1: check registry
     if reg_key in registry:
         existing_id = registry[reg_key]["notion_page_id"]
+        time.sleep(0.35)
+        repair_result = _repair_playlist_song(
+            existing_id, song_page_id, playlist_page_id,
+            artist_page_ids, db_config,
+        )
+        if repair_result is None:
+            # Page belongs to a different DB — stale entry, clear and fall through
+            log.info("Clearing stale registry entry for %r (wrong DB)", track["Track Name"])
+            del registry[reg_key]
+            existing_id = None
+        else:
+            return "repaired" if repair_result else "pre_existing"
 
-    # Check Notion in case the record exists outside the registry
+    # Step 2: search Notion in case the record exists outside the registry
     if not existing_id:
         time.sleep(0.35)
         existing_id = _find_playlist_song(
@@ -1236,19 +1259,18 @@ def _ensure_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
 
     if existing_id:
         time.sleep(0.35)
-        was_repaired = _repair_playlist_song(
+        repair_result = _repair_playlist_song(
             existing_id, song_page_id, playlist_page_id,
             artist_page_ids, db_config,
         )
-        if reg_key not in registry:
-            registry[reg_key] = {
-                "notion_page_id": existing_id,
-                "name": track["Track Name"],
-                "status": "pre_existing",
-                "first_seen": now, "last_synced": now,
-                "history": [{"action": "found_existing", "timestamp": now}],
-            }
-        return "repaired" if was_repaired else "pre_existing"
+        registry[reg_key] = {
+            "notion_page_id": existing_id,
+            "name": track["Track Name"],
+            "status": "pre_existing",
+            "first_seen": now, "last_synced": now,
+            "history": [{"action": "found_existing", "timestamp": now}],
+        }
+        return "repaired" if repair_result else "pre_existing"
 
     time.sleep(0.35)
     page_id = _create_playlist_song(
