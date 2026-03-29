@@ -1014,7 +1014,7 @@ _PLAYLIST_SONGS_DB = {
     },
     NOTION_TERI_PLAYLISTS_DB_ID: {
         "db_id":             NOTION_TERI_PL_SONGS_DB_ID,
-        "song_relation":     "🎤 Teri Songs",
+        "song_relation":     "Songs",
         "playlist_relation": "▶️ Teri & Chris\u2019s Playlists",
     },
 }
