@@ -65,8 +65,7 @@ Redirect URI must also be registered in the Spotify Developer Dashboard.
 | `App` | `ui/app.py` | Root `tk.Tk`; owns `ttk.Notebook`, manages tab lifecycle, Spotify connection |
 | `PlaylistBrowser` | `ui/browser.py` | Listbox of all playlists; double-click opens a `PlaylistTab` |
 | `PlaylistTab` | `ui/playlist_tab.py` | Treeview of tracks + lyrics panel; Export/Refresh buttons |
-| `NotionExportDialog` | `ui/notion_export_dialog.py` | Export tracks to Songs + Song Artists DBs |
-| `PlaylistExportDialog` | `ui/playlist_export_dialog.py` | Two-phase: create playlist record, then playlist song records |
+| `ExportDialog` | `ui/export_dialog.py` | Unified export: Songs/Artists → Playlist record → Playlist Songs |
 | `NotionMatchDialog` | `ui/match_dialog.py` | Interactive dialog when a name match candidate is found |
 | `ConsoleTab` | `ui/console_tab.py` | Live log viewer; Save Log, Copy All, Clear buttons |
 
@@ -101,7 +100,7 @@ JSON files keyed by Spotify identifier → Notion page ID + status.
 | `playlists.json` | Spotify playlist ID |
 | `playlist_songs.json` | `"{playlist_spotify_id}:{track_spotify_url}"` |
 
-## Notion export flow (notion.py)
+## Notion export flow (notion/ package)
 
 ### Songs + Artists (`export_tracks`)
 Three-step match chain per track:
@@ -127,7 +126,7 @@ Same three-step chain. Also fetches and sets `Playlist Cover` (external URL) fro
 - Checks cached page IDs still exist in Notion; removes stale entries
 - Accepts optional `keys` set to scope validation to the current playlist's tracks only
 
-## _PLAYLIST_SONGS_DB config (notion.py)
+## _PLAYLIST_SONGS_DB config (notion/_playlist_songs.py)
 Maps playlist DB ID → songs DB ID + relation property names (differ per Jessie/Teri):
 ```python
 _PLAYLIST_SONGS_DB = {
