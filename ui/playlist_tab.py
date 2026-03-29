@@ -12,8 +12,7 @@ from logger import log
 from spotify import fetch_all_tracks
 from theme import SURFACE, TEXT
 from notion import load_registry
-from ui.notion_export_dialog import NotionExportDialog
-from ui.playlist_export_dialog import PlaylistExportDialog
+from ui.export_dialog import ExportDialog
 
 
 class PlaylistTab(ttk.Frame):
@@ -103,8 +102,6 @@ class PlaylistTab(ttk.Frame):
         self.status_var = tk.StringVar(value="Loading tracks…")
         ttk.Label(bar, textvariable=self.status_var).pack(side="left")
         ttk.Button(bar, text="Close Tab", command=self._close_cb).pack(side="right")
-        ttk.Button(bar, text="Export Playlist",
-                   command=self._export_playlist_to_notion).pack(side="right", padx=(0, 6))
         ttk.Button(bar, text="Export to Notion",
                    command=self._export_to_notion).pack(side="right", padx=(0, 6))
         ttk.Button(bar, text="Export to CSV",
@@ -318,14 +315,11 @@ class PlaylistTab(ttk.Frame):
         for i, (_, iid) in enumerate(data):
             self.tree.move(iid, "", i)
 
-    def _export_playlist_to_notion(self):
-        PlaylistExportDialog(self, self._sp, self._playlist, self._tracks)
-
     def _export_to_notion(self):
         if not self._tracks:
             messagebox.showwarning("No tracks", "Tracks are still loading.")
             return
-        NotionExportDialog(self, self._sp, self._tracks)
+        ExportDialog(self, self._sp, self._playlist, self._tracks)
 
     def _export(self):
         if not self._tracks:
