@@ -52,7 +52,7 @@ def _batch_lookup_songs(urls: list, registry: dict) -> None:
         not_found = [url for url in urls if url not in found_urls]
         if not_found:
             log.info("Pre-flight: %d song(s) NOT found in Notion (will use name-based matching):", len(not_found))
-            for url in not_found[:5]:  # Log first 5 missing
+            for url in not_found:  # Log all missing URLs for debugging
                 log.info("  - NOT found: %s", url)
 
         log.info("Pre-flight: batch song lookup complete — found %d/%d", found_count, len(urls))
@@ -186,7 +186,8 @@ def _ensure_song(track: dict, artist_page_ids: list, registry: dict,
         log.info("Song %r auto-matched by Spotify URL (definitive)", track["Track Name"])
         return "pre_existing"
 
-    log.info("Song %r NOT found in pre-flight batch. Spotify URL: %s", track["Track Name"], spotify_url)
+    log.warning("Song %r NOT found in pre-flight batch. Spotify URL: %s", track["Track Name"], spotify_url)
+    log.debug("  Registry keys: %s", list(registry.keys())[:3])
 
     notion_id = None
 
@@ -194,6 +195,7 @@ def _ensure_song(track: dict, artist_page_ids: list, registry: dict,
     time.sleep(0.35)
     result = _find_song_by_name_in_notion(track["Track Name"])
     if result:
+        log.info("Step 2: Found by exact name match: %r", track["Track Name"])
         match_id, match_name = result
         if match_cb:
             choice = match_cb("song", _display, [{"id": match_id, "name": match_name}])
@@ -208,11 +210,17 @@ def _ensure_song(track: dict, artist_page_ids: list, registry: dict,
             except Exception:
                 log.warning("Could not backfill song %r:\n%s",
                             track["Track Name"], traceback.format_exc())
+    else:
+        log.debug("Step 2: No exact name match found for %r", track["Track Name"])
 
     # Step 3: interactive similar-title search
     if not notion_id and match_cb:
         time.sleep(0.35)
         candidates = _search_similar_songs_in_notion(track["Track Name"])
+        if candidates:
+            log.info("Step 3: Found %d similar candidates for %r (showing dialog)", len(candidates), track["Track Name"])
+        else:
+            log.warning("Step 3: No similar matches found for %r (will skip)", track["Track Name"])
         choice = match_cb("song", _display, candidates)
         if choice == SKIP:
             return "skipped"
@@ -235,17 +243,24 @@ def _ensure_song(track: dict, artist_page_ids: list, registry: dict,
         }
         return "pre_existing"
 
-    time.sleep(0.35)
-    notion_id = _create_song_in_notion(track, artist_page_ids)
-    registry[spotify_url] = {
-        "notion_page_id": notion_id,
-        "name": track["Track Name"],
-        "status": "added",
-        "first_seen": now, "last_synced": now,
-        "history": [{"action": "added", "timestamp": now}],
-    }
-    log.info("Created Notion song: %r", track["Track Name"])
-    return "added"
+    # No match found via any step; either create or skip
+    if not match_cb:
+        # No match_cb means we're in programmatic mode (playlist songs), create it
+        time.sleep(0.35)
+        notion_id = _create_song_in_notion(track, artist_page_ids)
+        registry[spotify_url] = {
+            "notion_page_id": notion_id,
+            "name": track["Track Name"],
+            "status": "added",
+            "first_seen": now, "last_synced": now,
+            "history": [{"action": "added", "timestamp": now}],
+        }
+        log.info("Created Notion song: %r", track["Track Name"])
+        return "added"
+
+    # match_cb is present but no match was found/confirmed
+    log.warning("Song %r: No matches found in Steps 2-3, and user did not confirm creation", track["Track Name"])
+    return "skipped"
 
 
 def export_tracks(tracks: list, sp, progress_cb=None, status_cb=None,
@@ -291,6 +306,13 @@ def export_tracks(tracks: list, sp, progress_cb=None, status_cb=None,
     # This batches the lookups to avoid 50+ individual API calls
     unregistered_urls = [t["Spotify URL"] for t in tracks if t.get("Spotify URL")]
     unregistered_artist_ids = list({a["id"] for t in tracks for a in t.get("Artists", [])})
+
+    # Log track names with their Spotify URLs for debugging
+    log.debug("Tracks with Spotify URLs:")
+    for track in tracks:
+        if track.get("Spotify URL"):
+            log.debug("  %r → %s", track.get("Track Name"), track["Spotify URL"])
+
     if unregistered_urls:
         _batch_lookup_songs(unregistered_urls, songs_reg)
     if unregistered_artist_ids:
