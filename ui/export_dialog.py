@@ -273,12 +273,15 @@ class ExportDialog(tk.Toplevel):
         self.after(0, self._show_summary, tracks_summary, pl_result, songs_summary)
 
     def _show_summary(self, tracks_summary, pl_result, songs_summary):
-        self._p3_status.set(
-            f"✓ {songs_summary['added']} added  "
-            f"— {songs_summary['pre_existing']} already in Notion"
-            + (f"  / {songs_summary['skipped']} skipped" if songs_summary["skipped"] else "")
-            + (f"  ✗ {len(songs_summary['errors'])} error(s)" if songs_summary["errors"] else "")
-        )
+        parts = [f"✓ {songs_summary['added']} added"]
+        if songs_summary.get("repaired"):
+            parts.append(f"✓ {songs_summary['repaired']} repaired")
+        parts.append(f"— {songs_summary['pre_existing']} already in Notion")
+        if songs_summary.get("skipped"):
+            parts.append(f"/ {songs_summary['skipped']} skipped")
+        if songs_summary.get("errors"):
+            parts.append(f"✗ {len(songs_summary['errors'])} error(s)")
+        self._p3_status.set("  ".join(parts))
 
         lines = []
         if tracks_summary.get("added_song_names"):
@@ -292,6 +295,10 @@ class ExportDialog(tk.Toplevel):
         if tracks_summary.get("added_artist_names"):
             lines.append(f"Artists added ({len(tracks_summary['added_artist_names'])}):")
             lines.extend(f"  {n}" for n in sorted(set(tracks_summary["added_artist_names"])))
+            lines.append("")
+        if songs_summary.get("repaired_names"):
+            lines.append(f"Playlist songs repaired ({len(songs_summary['repaired_names'])}):")
+            lines.extend(f"  {n}" for n in songs_summary["repaired_names"])
             lines.append("")
         if songs_summary.get("added_names"):
             lines.append(f"Playlist songs added ({len(songs_summary['added_names'])}):")

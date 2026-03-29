@@ -103,10 +103,12 @@ Three-step match chain per track:
 Same three-step chain. Also fetches and sets `Playlist Cover` (external URL) from Spotify.
 
 ### Playlist Songs (`export_playlist_songs`)
-- Finds the Song page and all Song Artist pages from the songs/artists registries
+- Exports missing songs/artists on the fly (no need to run songs export separately)
 - Creates a Playlist Song record linking playlist, song, and artists
 - Adds lyrics as a two-column Notion block (splits at 1900 chars, Notion rich_text limit)
-- Never modifies existing playlist song records
+- **Idempotent**: re-running repairs missing Song/Playlist/Artist relations on existing records
+- `_find_playlist_song` falls back to name+playlist search when song relation is empty
+- `_repair_playlist_song` PATCHes any missing relations without touching lyrics/notes
 
 ### Validate Registry (`validate_registry`)
 - Checks cached page IDs still exist in Notion; removes stale entries
@@ -123,7 +125,7 @@ _PLAYLIST_SONGS_DB = {
     },
     NOTION_TERI_PLAYLISTS_DB_ID: {
         "db_id":             NOTION_TERI_PL_SONGS_DB_ID,
-        "song_relation":     "🎤 Teri Songs",
+        "song_relation":     "Songs",
         "playlist_relation": "▶️ Teri & Chris\u2019s Playlists",  # U+2019 curly apostrophe
     },
 }

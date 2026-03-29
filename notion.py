@@ -1093,8 +1093,15 @@ def _lyrics_blocks(lyrics: str) -> list:
 
 def _find_playlist_song(song_page_id: str, playlist_page_id: str,
                         pl_songs_db_id: str,
-                        song_prop: str, playlist_prop: str) -> "str | None":
-    """Return the Notion page ID of an existing playlist song record, or None."""
+                        song_prop: str, playlist_prop: str,
+                        track_name: str = "") -> "str | None":
+    """Return the Notion page ID of an existing playlist song record, or None.
+
+    Tries song+playlist AND filter first.  Falls back to name+playlist
+    to catch records where the song relation was never set (e.g. due to a
+    previously wrong property name).
+    """
+    # Primary: match by song + playlist relations
     result = _notion_post(f"databases/{pl_songs_db_id}/query", {
         "filter": {
             "and": [
@@ -1107,7 +1114,27 @@ def _find_playlist_song(song_page_id: str, playlist_page_id: str,
         "page_size": 1,
     })
     pages = result.get("results", [])
-    return pages[0]["id"] if pages else None
+    if pages:
+        return pages[0]["id"]
+
+    # Fallback: match by name + playlist (for records with empty song relation)
+    if track_name:
+        result = _notion_post(f"databases/{pl_songs_db_id}/query", {
+            "filter": {
+                "and": [
+                    {"property": "Name",
+                     "title": {"equals": track_name}},
+                    {"property": playlist_prop,
+                     "relation": {"contains": playlist_page_id}},
+                ]
+            },
+            "page_size": 1,
+        })
+        pages = result.get("results", [])
+        if pages:
+            return pages[0]["id"]
+
+    return None
 
 
 def _create_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
@@ -1133,16 +1160,57 @@ def _create_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
     return result["id"]
 
 
+def _repair_playlist_song(page_id: str, song_page_id: str,
+                          playlist_page_id: str, artist_page_ids: list,
+                          db_config: dict) -> bool:
+    """Check an existing playlist song page and PATCH any missing relations.
+
+    Returns True if a repair was made, False if the record was already correct.
+    """
+    page = _notion_get(f"pages/{page_id}")
+    props = page.get("properties", {})
+
+    patch: dict = {}
+
+    # Song relation
+    song_rel = props.get(db_config["song_relation"], {}).get("relation", [])
+    if not any(r["id"] == song_page_id for r in song_rel):
+        patch[db_config["song_relation"]] = {"relation": [{"id": song_page_id}]}
+
+    # Playlist relation
+    pl_rel = props.get(db_config["playlist_relation"], {}).get("relation", [])
+    if not any(r["id"] == playlist_page_id for r in pl_rel):
+        patch[db_config["playlist_relation"]] = {"relation": [{"id": playlist_page_id}]}
+
+    # Song Artists relation
+    artist_rel = props.get("👩🏼\u200d🎤 Song Artists", {}).get("relation", [])
+    existing_artist_ids = {r["id"] for r in artist_rel}
+    if artist_page_ids and not all(aid in existing_artist_ids for aid in artist_page_ids):
+        patch["👩🏼\u200d🎤 Song Artists"] = {
+            "relation": [{"id": pid} for pid in artist_page_ids]
+        }
+
+    if not patch:
+        return False
+
+    _notion_request("PATCH", f"pages/{page_id}", json={"properties": patch})
+    repaired = ", ".join(patch.keys())
+    log.info("Repaired playlist song %s: set %s", page_id[:12], repaired)
+    return True
+
+
 def _ensure_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
                           artist_page_ids: list, track_num: int,
                           playlist_spotify_id: str, registry: dict,
                           db_config: dict) -> str:
     """
-    Ensure a playlist song record exists.  Returns 'pre_existing', 'added', or 'skipped'.
+    Ensure a playlist song record exists with correct relations.
+    Returns 'pre_existing', 'added', or 'skipped'.
     Registry key: "{playlist_spotify_id}:{spotify_track_url}"
 
-    Existing records are never modified — lyrics and notes written at creation
-    time are left intact so any manual edits the user has made are preserved.
+    Idempotent: re-running repairs missing Song/Playlist/Artist relations
+    on existing records (e.g. from a previous export with a wrong property name).
+    Lyrics and notes are never modified.
     """
     import time
     from datetime import datetime, timezone
@@ -1151,25 +1219,36 @@ def _ensure_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
     reg_key = f"{playlist_spotify_id}:{spotify_url}"
     now = datetime.now(timezone.utc).isoformat()
 
-    if reg_key in registry:
-        return "pre_existing"
+    existing_id = None
 
-    # Check Notion in case the record already exists outside the registry
-    time.sleep(0.35)
-    existing_id = _find_playlist_song(
-        song_page_id, playlist_page_id,
-        db_config["db_id"], db_config["song_relation"], db_config["playlist_relation"],
-    )
+    # Check registry first
+    if reg_key in registry:
+        existing_id = registry[reg_key]["notion_page_id"]
+
+    # Check Notion in case the record exists outside the registry
+    if not existing_id:
+        time.sleep(0.35)
+        existing_id = _find_playlist_song(
+            song_page_id, playlist_page_id,
+            db_config["db_id"], db_config["song_relation"],
+            db_config["playlist_relation"], track_name=track["Track Name"],
+        )
+
     if existing_id:
-        log.info("Found existing playlist song: %r", track["Track Name"])
-        registry[reg_key] = {
-            "notion_page_id": existing_id,
-            "name": track["Track Name"],
-            "status": "pre_existing",
-            "first_seen": now, "last_synced": now,
-            "history": [{"action": "found_existing", "timestamp": now}],
-        }
-        return "pre_existing"
+        time.sleep(0.35)
+        was_repaired = _repair_playlist_song(
+            existing_id, song_page_id, playlist_page_id,
+            artist_page_ids, db_config,
+        )
+        if reg_key not in registry:
+            registry[reg_key] = {
+                "notion_page_id": existing_id,
+                "name": track["Track Name"],
+                "status": "pre_existing",
+                "first_seen": now, "last_synced": now,
+                "history": [{"action": "found_existing", "timestamp": now}],
+            }
+        return "repaired" if was_repaired else "pre_existing"
 
     time.sleep(0.35)
     page_id = _create_playlist_song(
@@ -1243,8 +1322,9 @@ def export_playlist_songs(tracks: list, playlist_spotify_id: str,
                 log.warning("Could not fetch artist details batch:\n%s", traceback.format_exc())
 
     summary = {
-        "added": 0, "pre_existing": 0, "skipped": 0, "errors": [],
-        "added_names": [], "skipped_names": [],
+        "added": 0, "pre_existing": 0, "repaired": 0, "skipped": 0,
+        "errors": [],
+        "added_names": [], "repaired_names": [], "skipped_names": [],
     }
 
     for i, track in enumerate(tracks):
@@ -1297,6 +1377,8 @@ def export_playlist_songs(tracks: list, playlist_spotify_id: str,
             summary[status] += 1
             if status == "added":
                 summary["added_names"].append(track["Track Name"])
+            elif status == "repaired":
+                summary["repaired_names"].append(track["Track Name"])
         except Exception:
             err = traceback.format_exc()
             log.error("Error creating playlist song %r:\n%s", track.get("Track Name"), err)
@@ -1312,9 +1394,9 @@ def export_playlist_songs(tracks: list, playlist_spotify_id: str,
     if progress_cb:
         progress_cb(len(tracks), len(tracks), "")
 
-    log.info("Playlist songs export complete: added=%d pre_existing=%d skipped=%d errors=%d",
-             summary["added"], summary["pre_existing"], summary["skipped"],
-             len(summary["errors"]))
+    log.info("Playlist songs export complete: added=%d repaired=%d pre_existing=%d skipped=%d errors=%d",
+             summary["added"], summary["repaired"], summary["pre_existing"],
+             summary["skipped"], len(summary["errors"]))
     return summary
 
 
