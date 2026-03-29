@@ -38,13 +38,26 @@ Redirect URI must also be registered in the Spotify Developer Dashboard.
 |---|---|
 | `main.py` | Entry point |
 | `config.py` | All env vars and Notion DB IDs |
-| `notion.py` | All Notion API logic, registries, export functions |
+| `notion/` | Notion API package (see below) |
 | `spotify.py` | `fetch_all_tracks`, `fetch_user_playlists` |
 | `lyrics.py` | `fetch_lyrics` (lyrics.ovh) with local file cache |
 | `export.py` | `export_to_csv` |
 | `cache.py` | Per-playlist track cache (`tracks/`) |
 | `logger.py` | Logging setup + in-app queue for ConsoleTab |
 | `theme.py` | Dark-mode color constants |
+
+### notion/ package
+| File | Lines | Purpose |
+|---|---|---|
+| `__init__.py` | 20 | Re-exports public API — external imports unchanged |
+| `_api.py` | 50 | `_notion_request`, `_notion_post`, `_notion_get` |
+| `_registry.py` | 85 | `load_registry`, `save_registry`, `validate_registry` |
+| `_helpers.py` | 63 | `SKIP`, `_page_title`, `_apostrophe_variants`, `_song_title_variants`, `_song_artist_names` |
+| `_artists.py` | 189 | Artist find/create/backfill/ensure functions |
+| `_songs.py` | 337 | Song find/create/backfill/ensure + `export_tracks` |
+| `_playlists.py` | 186 | Playlist find/create/backfill/ensure + `export_playlist` |
+| `_playlist_songs.py` | 354 | Lyrics blocks, playlist song ensure/repair + `export_playlist_songs` |
+| `_schema.py` | 118 | `fetch_databases`, `snapshot_schema`, `get_notion_client` |
 
 ### UI classes
 | Class | File | Purpose |
