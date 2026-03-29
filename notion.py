@@ -1188,13 +1188,15 @@ def _ensure_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
 
 def export_playlist_songs(tracks: list, playlist_spotify_id: str,
                           playlists_db_id: str,
+                          sp=None, match_cb=None,
                           progress_cb=None, stop_event=None) -> dict:
     """
     Create playlist song records in the appropriate Playlist Songs DB.
 
-    Requires the playlist and its songs/artists to already be in their
-    respective registries.  Tracks whose songs are not in the songs registry
-    are skipped with a warning.
+    If a track's song or artists are not yet in their registries, they will be
+    exported on the fly (using match_cb for interactive matching and sp for
+    fetching Spotify artist metadata).  Tracks are only skipped if they have
+    no Spotify URL.
 
     Returns a summary dict.
     """
@@ -1215,6 +1217,31 @@ def export_playlist_songs(tracks: list, playlist_spotify_id: str,
         )
     playlist_page_id = playlist_entry["notion_page_id"]
 
+    # Pre-fetch Spotify artist details for any artists not yet in the registry
+    missing_artist_ids = list({
+        a["id"] for t in tracks for a in t.get("Artists", [])
+        if a["id"] not in artists_reg
+    })
+    artist_details: dict = {}
+    if missing_artist_ids and sp:
+        for i in range(0, len(missing_artist_ids), 50):
+            batch = missing_artist_ids[i:i + 50]
+            try:
+                results = sp.artists(batch)
+                for a in (results.get("artists") or []):
+                    if a:
+                        artist_details[a["id"]] = {
+                            "name": a["name"],
+                            "id": a["id"],
+                            "spotify_url": a.get("external_urls", {}).get("spotify"),
+                            "genres": a.get("genres", []),
+                            "popularity": a.get("popularity"),
+                            "followers": (a.get("followers") or {}).get("total"),
+                            "image_url": a["images"][0]["url"] if a.get("images") else None,
+                        }
+            except Exception:
+                log.warning("Could not fetch artist details batch:\n%s", traceback.format_exc())
+
     summary = {
         "added": 0, "pre_existing": 0, "skipped": 0, "errors": [],
         "added_names": [], "skipped_names": [],
@@ -1229,22 +1256,39 @@ def export_playlist_songs(tracks: list, playlist_spotify_id: str,
             progress_cb(i, len(tracks), track.get("Track Name", ""))
 
         spotify_url = track.get("Spotify URL", "")
-        song_entry = songs_reg.get(spotify_url)
-        if not song_entry:
-            log.warning("Skipping playlist song — not in songs registry: %r",
+        if not spotify_url:
+            log.warning("Skipping playlist song — no Spotify URL: %r",
                         track.get("Track Name"))
             summary["skipped"] += 1
             summary["skipped_names"].append(track["Track Name"])
             continue
 
-        song_page_id = song_entry["notion_page_id"]
-        artist_page_ids = [
-            artists_reg[a["id"]]["notion_page_id"]
-            for a in track.get("Artists", [])
-            if a["id"] in artists_reg
-        ]
-
         try:
+            # Ensure artists exist in Notion (export on the fly if needed)
+            artist_page_ids = []
+            for artist_stub in track.get("Artists", []):
+                if artist_stub["id"] in artists_reg:
+                    artist_page_ids.append(artists_reg[artist_stub["id"]]["notion_page_id"])
+                else:
+                    info = artist_details.get(
+                        artist_stub["id"],
+                        {"name": artist_stub["name"], "id": artist_stub["id"]},
+                    )
+                    page_id, _ = _ensure_artist(info, artists_reg, match_cb=match_cb)
+                    if page_id:
+                        artist_page_ids.append(page_id)
+
+            # Ensure song exists in Notion (export on the fly if needed)
+            if spotify_url not in songs_reg:
+                song_status = _ensure_song(track, artist_page_ids, songs_reg,
+                                           match_cb=match_cb)
+                if song_status == "skipped":
+                    summary["skipped"] += 1
+                    summary["skipped_names"].append(track["Track Name"])
+                    continue
+
+            song_page_id = songs_reg[spotify_url]["notion_page_id"]
+
             status = _ensure_playlist_song(
                 track, song_page_id, playlist_page_id,
                 artist_page_ids, i + 1,
@@ -1261,6 +1305,8 @@ def export_playlist_songs(tracks: list, playlist_spotify_id: str,
                 "error": err.splitlines()[-1],
             })
 
+    save_registry("artists", artists_reg)
+    save_registry("songs", songs_reg)
     save_registry("playlist_songs", pl_songs_reg)
 
     if progress_cb:

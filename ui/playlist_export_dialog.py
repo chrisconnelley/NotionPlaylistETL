@@ -245,11 +245,21 @@ class PlaylistExportDialog(tk.Toplevel):
                        f"Track {current} / {total}" +
                        (f"  —  {track_name[:50]}" if track_name else ""))
 
+        def match_cb(kind, item_name, candidates):
+            result_holder = {}
+            done_event = threading.Event()
+            self.after(0, self._show_match_dialog,
+                       kind, item_name, candidates, result_holder, done_event)
+            done_event.wait()
+            return result_holder.get("choice")
+
         try:
             summary = export_playlist_songs(
                 self._tracks,
                 self._playlist["id"],
                 self._playlist_db_id,
+                sp=self._sp,
+                match_cb=match_cb,
                 progress_cb=progress_cb,
                 stop_event=self._stop_event,
             )
@@ -272,7 +282,7 @@ class PlaylistExportDialog(tk.Toplevel):
             lines.extend(f"  {n}" for n in summary["added_names"])
             lines.append("")
         if summary["skipped_names"]:
-            lines.append(f"Skipped — song not yet exported ({len(summary['skipped_names'])}):")
+            lines.append(f"Skipped ({len(summary['skipped_names'])}):")
             lines.extend(f"  {n}" for n in summary["skipped_names"])
             lines.append("")
         if summary["errors"]:
