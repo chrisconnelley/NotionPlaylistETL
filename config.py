@@ -18,3 +18,12 @@ TRACKS_CACHE_DIR = os.path.join(BASE_DIR, "tracks")
 
 os.makedirs(LYRICS_CACHE_DIR, exist_ok=True)
 os.makedirs(TRACKS_CACHE_DIR, exist_ok=True)
+
+NOTION_SONGS_DB_ID              = "8ccd2adb-8912-493c-afe1-1b06c3433828"
+NOTION_ARTISTS_DB_ID            = "d5367ed0-480a-4ccc-9ad4-bda5e56fbf91"
+NOTION_JESSIE_PLAYLISTS_DB_ID   = "5b0f6317-af53-401f-9741-3f862542f6cf"
+NOTION_TERI_PLAYLISTS_DB_ID     = "91b88eb5-1df5-4287-8a90-c48f6b6755f9"
+NOTION_JESSIE_PL_SONGS_DB_ID    = "93b98cda-f7c4-4699-9eb2-a518feb9b7ac"
+NOTION_TERI_PL_SONGS_DB_ID      = "1c741983-beb5-8060-a39d-f8ba8b02f27b"
+NOTION_SYNC_DIR      = os.path.join(BASE_DIR, "notion_sync")
+os.makedirs(NOTION_SYNC_DIR, exist_ok=True)

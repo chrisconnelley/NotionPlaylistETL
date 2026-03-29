@@ -11,16 +11,18 @@ from lyrics import fetch_lyrics
 from logger import log
 from spotify import fetch_all_tracks
 from theme import SURFACE, TEXT
-from ui.notion_dialog import NotionDatabasePicker
+from notion import load_registry
+from ui.notion_export_dialog import NotionExportDialog
+from ui.playlist_export_dialog import PlaylistExportDialog
 
 
 class PlaylistTab(ttk.Frame):
-    _COLS = ("num", "artist", "title", "year", "lyrics_preview")
-    _NAMES = ("#", "Artist", "Title", "Year", "Lyrics")
-    _WIDTHS = (40, 160, 210, 55, 260)
+    _COLS   = ("num", "artist", "title", "year", "lyrics_preview", "notion_status", "artist_notion")
+    _NAMES  = ("#", "Artist", "Title", "Year", "Lyrics", "Song", "Artists")
+    _WIDTHS = (40, 160, 210, 55, 260, 70, 70)
     _STRETCH = {"lyrics_preview"}
 
-    def __init__(self, parent: ttk.Notebook, sp: spotipy.Spotify,
+    def __init__(self, parent: ttk.Notebook, sp: "spotipy.Spotify | None",
                  playlist: dict, close_cb):
         super().__init__(parent)
         self._sp = sp
@@ -28,9 +30,19 @@ class PlaylistTab(ttk.Frame):
         self._close_cb = close_cb
         self._tracks: list[dict] = []
         self._stop_lyrics = threading.Event()
+        self._waiting_for_spotify = False
         self._build_ui()
         log.info("Opening playlist tab: %r", playlist["name"])
         threading.Thread(target=self._load_tracks, daemon=True).start()
+
+    def set_spotify_client(self, sp: spotipy.Spotify):
+        """Called by App once the Spotify connection is established."""
+        self._sp = sp
+        if self._waiting_for_spotify:
+            self._waiting_for_spotify = False
+            log.info("Spotify now available — fetching tracks for %r", self._playlist["name"])
+            self.status_var.set("Spotify connected — loading tracks…")
+            threading.Thread(target=self._fetch_from_spotify, daemon=True).start()
 
     def close(self):
         self._stop_lyrics.set()
@@ -91,6 +103,8 @@ class PlaylistTab(ttk.Frame):
         self.status_var = tk.StringVar(value="Loading tracks…")
         ttk.Label(bar, textvariable=self.status_var).pack(side="left")
         ttk.Button(bar, text="Close Tab", command=self._close_cb).pack(side="right")
+        ttk.Button(bar, text="Export Playlist",
+                   command=self._export_playlist_to_notion).pack(side="right", padx=(0, 6))
         ttk.Button(bar, text="Export to Notion",
                    command=self._export_to_notion).pack(side="right", padx=(0, 6))
         ttk.Button(bar, text="Export to CSV",
@@ -117,6 +131,12 @@ class PlaylistTab(ttk.Frame):
             self._tracks = cached
             self.after(0, self._populate_tree)
             threading.Thread(target=self._load_lyrics_bg, daemon=True).start()
+            return
+        if self._sp is None:
+            self._waiting_for_spotify = True
+            self.after(0, self.status_var.set,
+                       "Waiting for Spotify connection…")
+            self.after(0, self.progress.stop)
             return
         self._fetch_from_spotify()
 
@@ -187,9 +207,24 @@ class PlaylistTab(ttk.Frame):
         threading.Thread(target=self._load_lyrics_bg, daemon=True).start()
 
     def _populate_tree(self):
+        songs_reg = load_registry("songs")
+        artists_reg = load_registry("artists")
+        _notion_display = {"added": "Added", "pre_existing": "In Notion"}
         for i, t in enumerate(self._tracks):
+            reg_entry = songs_reg.get(t.get("Spotify URL", ""), {})
+            notion_val = _notion_display.get(reg_entry.get("status", ""), "—")
+            artist_ids = [a["id"] for a in t.get("Artists", [])]
+            if not artist_ids:
+                artist_notion_val = "—"
+            elif all(aid in artists_reg for aid in artist_ids):
+                artist_notion_val = "In Notion"
+            elif any(aid in artists_reg for aid in artist_ids):
+                artist_notion_val = "Partial"
+            else:
+                artist_notion_val = "—"
             self.tree.insert("", "end", iid=str(i), values=(
                 i + 1, t["Artist(s)"], t["Track Name"], t["Year"], "…",
+                notion_val, artist_notion_val,
             ))
         n = len(self._tracks)
         self.status_var.set(f"{n} track{'s' if n != 1 else ''} — fetching lyrics…")
@@ -210,6 +245,26 @@ class PlaylistTab(ttk.Frame):
                    f"{n} track{'s' if n != 1 else ''} — lyrics loaded.")
         self.after(0, self.progress.stop)
         log.info("Finished loading lyrics for %r", self._playlist["name"])
+
+    def update_notion_status(self, spotify_url: str, display_status: str):
+        """Update the Song Notion status cell for a track identified by Spotify URL."""
+        for iid in self.tree.get_children():
+            idx = int(iid)
+            if idx < len(self._tracks) and self._tracks[idx].get("Spotify URL") == spotify_url:
+                vals = list(self.tree.item(iid, "values"))
+                vals[5] = display_status
+                self.tree.item(iid, values=vals)
+                break
+
+    def update_artist_notion_status(self, spotify_url: str, display_status: str):
+        """Update the Artist Notion status cell for a track identified by Spotify URL."""
+        for iid in self.tree.get_children():
+            idx = int(iid)
+            if idx < len(self._tracks) and self._tracks[idx].get("Spotify URL") == spotify_url:
+                vals = list(self.tree.item(iid, "values"))
+                vals[6] = display_status
+                self.tree.item(iid, values=vals)
+                break
 
     def _update_lyrics_cell(self, iid: str, preview: str):
         if not self.tree.exists(iid):
@@ -263,17 +318,14 @@ class PlaylistTab(ttk.Frame):
         for i, (_, iid) in enumerate(data):
             self.tree.move(iid, "", i)
 
+    def _export_playlist_to_notion(self):
+        PlaylistExportDialog(self, self._sp, self._playlist, self._tracks)
+
     def _export_to_notion(self):
         if not self._tracks:
             messagebox.showwarning("No tracks", "Tracks are still loading.")
             return
-        NotionDatabasePicker(self, on_select=self._on_notion_database_selected)
-
-    def _on_notion_database_selected(self, database: dict):
-        log.info("Exporting %d tracks to Notion database %r (%s)",
-                 len(self._tracks), database["name"], database["id"])
-        messagebox.showinfo("Coming soon",
-                            f"Export to \"{database['name']}\" will be wired up next.")
+        NotionExportDialog(self, self._sp, self._tracks)
 
     def _export(self):
         if not self._tracks:

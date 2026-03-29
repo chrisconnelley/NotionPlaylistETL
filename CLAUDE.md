@@ -1,7 +1,7 @@
 # NotionPlaylistETL — Claude Context
 
 ## What this project does
-Python/tkinter desktop app that fetches Spotify playlists via Spotipy and exports tracks to CSV for Notion import. Also displays lyrics fetched in the background from lyrics.ovh.
+Python/tkinter desktop app that fetches Spotify playlists via Spotipy, displays lyrics, and exports tracks to Notion (Songs DB, Song Artists DB, Playlists DB, Playlist Songs DB) or CSV.
 
 ## Stack
 - **Python 3.12**, tkinter (stdlib GUI), spotipy, python-dotenv, requests
@@ -27,28 +27,35 @@ cp .env.example .env                # then fill in credentials
 SPOTIFY_CLIENT_ID=...
 SPOTIFY_CLIENT_SECRET=...
 SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
+NOTION_API_KEY=...
 ```
 Redirect URI must also be registered in the Spotify Developer Dashboard.
 
-## Architecture — main.py
+## Architecture
 
-### Core functions
-| Function | Purpose |
+### Module layout
+| Module | Purpose |
 |---|---|
-| `get_spotify_client()` | Creates SpotifyOAuth client using .env credentials |
-| `fetch_user_playlists(sp)` | Fetches all playlists (name + id only — no track count, avoids API inconsistency) |
-| `fetch_all_tracks(sp, playlist_id)` | Paginates through all tracks in a playlist (100 per page) |
-| `fetch_lyrics(artist, title)` | Fetches lyrics from lyrics.ovh; strips parentheticals, uses first artist only |
-| `export_to_csv(tracks, path)` | Writes tracks to CSV with Notion-friendly columns |
-| `load_playlist_cache()` / `save_playlist_cache()` | JSON cache at `playlist_cache.json` for instant startup |
+| `main.py` | Entry point |
+| `config.py` | All env vars and Notion DB IDs |
+| `notion.py` | All Notion API logic, registries, export functions |
+| `spotify.py` | `fetch_all_tracks`, `fetch_user_playlists` |
+| `lyrics.py` | `fetch_lyrics` (lyrics.ovh) with local file cache |
+| `export.py` | `export_to_csv` |
+| `cache.py` | Per-playlist track cache (`tracks/`) |
+| `logger.py` | Logging setup + in-app queue for ConsoleTab |
+| `theme.py` | Dark-mode color constants |
 
 ### UI classes
-| Class | Tab label | Purpose |
+| Class | File | Purpose |
 |---|---|---|
-| `App` | — | Root `tk.Tk`; owns `ttk.Notebook`, manages tab lifecycle, Spotify connection |
-| `PlaylistBrowser` | Playlists | Listbox of all playlists; double-click opens a `PlaylistTab` |
-| `PlaylistTab` | Playlist name | Treeview of tracks + lyrics panel; Export and Close Tab buttons |
-| `ConsoleTab` | Console | Live log viewer; Save Log, Copy All, Clear buttons |
+| `App` | `ui/app.py` | Root `tk.Tk`; owns `ttk.Notebook`, manages tab lifecycle, Spotify connection |
+| `PlaylistBrowser` | `ui/browser.py` | Listbox of all playlists; double-click opens a `PlaylistTab` |
+| `PlaylistTab` | `ui/playlist_tab.py` | Treeview of tracks + lyrics panel; Export/Refresh buttons |
+| `NotionExportDialog` | `ui/notion_export_dialog.py` | Export tracks to Songs + Song Artists DBs |
+| `PlaylistExportDialog` | `ui/playlist_export_dialog.py` | Two-phase: create playlist record, then playlist song records |
+| `NotionMatchDialog` | `ui/match_dialog.py` | Interactive dialog when a name match candidate is found |
+| `ConsoleTab` | `ui/console_tab.py` | Live log viewer; Save Log, Copy All, Clear buttons |
 
 ### Startup flow
 1. `App.__init__` → `_connect()`
@@ -59,13 +66,86 @@ Redirect URI must also be registered in the Spotify Developer Dashboard.
 1. Double-click in `PlaylistBrowser` → `App._open_playlist()`
 2. Guard: if `self._sp is None` (still connecting), show status message and return
 3. `PlaylistTab.__init__` → background thread → `_load_tracks()`
-4. `_load_tracks`: fetch real track total via `sp.playlist()`, then `fetch_all_tracks()`
+4. `_load_tracks`: check tracks cache → else fetch from Spotify
 5. Populate treeview, then start second background thread for lyrics
 
-## Known Spotify API quirks
-- `current_user_playlists()` returns `items` (not `tracks`) for the track-count field on this account — we skip the count entirely during list load and fetch it per-playlist when a tab opens
-- Same `items` vs `tracks` discrepancy appears in `sp.playlist()` response; code checks both with `.get("tracks") or .get("items")`
-- 403 on `playlist_items`: playlist is private/owned by another user — handled gracefully with a clear error message in the tab
+## Notion DB IDs (config.py)
+```python
+NOTION_SONGS_DB_ID              = "8ccd2adb-..."
+NOTION_ARTISTS_DB_ID            = "d5367ed0-..."
+NOTION_JESSIE_PLAYLISTS_DB_ID   = "5b0f6317-..."
+NOTION_TERI_PLAYLISTS_DB_ID     = "91b88eb5-..."
+NOTION_JESSIE_PL_SONGS_DB_ID    = "93b98cda-..."
+NOTION_TERI_PL_SONGS_DB_ID      = "1c741983-..."
+```
+
+## Local registries (notion_sync/)
+JSON files keyed by Spotify identifier → Notion page ID + status.
+| File | Key |
+|---|---|
+| `songs.json` | Spotify track URL |
+| `artists.json` | Spotify artist ID |
+| `playlists.json` | Spotify playlist ID |
+| `playlist_songs.json` | `"{playlist_spotify_id}:{track_spotify_url}"` |
+
+## Notion export flow (notion.py)
+
+### Songs + Artists (`export_tracks`)
+Three-step match chain per track:
+1. Registry lookup by Spotify URL/ID
+2. Exact name search in Notion → candidate shown in `NotionMatchDialog` → backfill only if confirmed
+3. Similarity search → `NotionMatchDialog`
+4. Create new if no match confirmed
+
+**IMPORTANT**: `_backfill_song_spotify_url` / `_backfill_artist_spotify_id` only run AFTER the user confirms the match (`notion_id == match_id`). Never backfill before confirmation.
+
+### Playlists (`export_playlist`)
+Same three-step chain. Also fetches and sets `Playlist Cover` (external URL) from Spotify.
+
+### Playlist Songs (`export_playlist_songs`)
+- Finds the Song page and all Song Artist pages from the songs/artists registries
+- Creates a Playlist Song record linking playlist, song, and artists
+- Adds lyrics as a two-column Notion block (splits at 1900 chars, Notion rich_text limit)
+- Never modifies existing playlist song records
+
+### Validate Registry (`validate_registry`)
+- Checks cached page IDs still exist in Notion; removes stale entries
+- Accepts optional `keys` set to scope validation to the current playlist's tracks only
+
+## _PLAYLIST_SONGS_DB config (notion.py)
+Maps playlist DB ID → songs DB ID + relation property names (differ per Jessie/Teri):
+```python
+_PLAYLIST_SONGS_DB = {
+    NOTION_JESSIE_PLAYLISTS_DB_ID: {
+        "db_id":             NOTION_JESSIE_PL_SONGS_DB_ID,
+        "song_relation":     "Song",
+        "playlist_relation": "Jessie Playlist",
+    },
+    NOTION_TERI_PLAYLISTS_DB_ID: {
+        "db_id":             NOTION_TERI_PL_SONGS_DB_ID,
+        "song_relation":     "🎤 Teri Songs",
+        "playlist_relation": "▶️ Teri & Chris\u2019s Playlists",  # U+2019 curly apostrophe
+    },
+}
+```
+
+## Known quirks / gotchas
+- Spotify API: `current_user_playlists()` returns `items` (not `tracks`) for track-count — skip count during list load, fetch per-playlist when tab opens
+- Notion property names use curly apostrophe U+2019 (`'`), not straight U+0027 (`'`) — `_apostrophe_variants()` handles search; hardcode U+2019 in property name strings
+- Notion data_source relations cannot be used as rollup sources via API — must be added manually in Notion UI
+- Notion rich_text limit: 2000 chars per element; lyrics split at 1900 chars
+- Notion `files` property for cover images uses `{"type": "external", "external": {"url": ...}}`
+- 403 on playlist_items: playlist is private/owned by another user — handled gracefully
+
+## Threading pattern for match dialogs
+Export runs on a background thread. When a match candidate is found:
+1. Background thread calls `match_cb(kind, name, candidates)`
+2. `match_cb` schedules `_show_match_dialog` on the main thread via `self.after(0, ...)`
+3. Background thread blocks on `done_event.wait()`
+4. Main thread shows dialog, sets `result_holder["choice"]`, calls `done_event.set()`
+5. Background thread resumes with the user's choice
+
+`SKIP` sentinel (`"__skip__"`): returned by `match_cb` when user skips a track entirely.
 
 ## Logging
 - Uses Python `logging` module; writes to stderr and an in-app queue
@@ -78,8 +158,11 @@ Redirect URI must also be registered in the Spotify Developer Dashboard.
 ## Files not in git
 | File | Reason |
 |---|---|
-| `.env` | Contains Spotify credentials |
+| `.env` | Contains Spotify/Notion credentials |
 | `.cache` | Spotipy OAuth token |
 | `playlist_cache.json` | Personal playlist data |
+| `tracks/` | Per-playlist track caches |
+| `lyrics/` | Per-song lyrics caches |
+| `notion_sync/` | Local registry JSON files |
 | `etl_log_*.txt` | Runtime logs |
 | `.venv/` | Virtualenv |

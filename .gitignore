@@ -7,6 +7,7 @@ playlist_cache.json
 etl_log_*.txt
 lyrics/
 tracks/
+notion_sync/
 
 # Python
 .venv/

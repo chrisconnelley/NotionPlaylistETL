@@ -91,15 +91,13 @@ class App(tk.Tk):
         self._sp = sp
         save_playlist_cache(playlists)
         self.after(0, self.browser.load, playlists)
+        self.after(0, self._notify_tabs_spotify_ready, sp)
 
     # ------------------------------------------------------------------
     # Tab management
     # ------------------------------------------------------------------
 
     def _open_playlist(self, playlist: dict):
-        if self._sp is None:
-            self.browser.status_var.set("Still connecting to Spotify — please wait…")
-            return
         pid = playlist["id"]
         if pid in self._open_tabs:
             try:
@@ -117,6 +115,15 @@ class App(tk.Tk):
         self.notebook.add(tab, text=label)
         self._open_tabs[pid] = str(tab)
         self.notebook.select(str(tab))
+
+    def _notify_tabs_spotify_ready(self, sp):
+        for widget_path in self._open_tabs.values():
+            try:
+                widget = self.nametowidget(widget_path)
+                if isinstance(widget, PlaylistTab):
+                    widget.set_spotify_client(sp)
+            except tk.TclError:
+                pass
 
     def _close_tab(self, playlist_id: str):
         widget_path = self._open_tabs.pop(playlist_id, None)

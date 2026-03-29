@@ -44,8 +44,8 @@ def fetch_all_tracks(sp: spotipy.Spotify, playlist_id: str,
     results = sp.playlist_items(
         playlist_id,
         fields="items(added_at,added_by.id,"
-               "track(name,id,duration_ms,external_urls,artists(name),album(name,release_date)),"
-               "item(name,id,duration_ms,external_urls,artists(name),album(name,release_date)))"
+               "track(name,id,duration_ms,external_urls,artists(name,id),album(name,release_date)),"
+               "item(name,id,duration_ms,external_urls,artists(name,id),album(name,release_date)))"
                ",next",
         limit=100,
     )
@@ -64,6 +64,7 @@ def fetch_all_tracks(sp: spotipy.Spotify, playlist_id: str,
             tracks.append({
                 "Track Name": track["name"],
                 "Artist(s)": ", ".join(a["name"] for a in track["artists"]),
+                "Artists": [{"name": a["name"], "id": a["id"]} for a in track["artists"]],
                 "Album": track["album"]["name"],
                 "Release Date": release_date,
                 "Year": year,
