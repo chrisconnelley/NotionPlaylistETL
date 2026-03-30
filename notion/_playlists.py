@@ -1,22 +1,18 @@
 import time
 import traceback
-from datetime import datetime, timezone
-from urllib.parse import urlparse
 
-from config import NOTION_PLAYLISTS_DB_ID
 from logger import log
 from notion._api import _notion_post, _notion_request
-from notion._helpers import SKIP, _apostrophe_variants, _page_title, _chunks
+from notion._helpers import (
+    SKIP, _apostrophe_variants, _page_title, _chunks,
+    _normalize_spotify_url, _make_registry_entry, _merge_candidates,
+)
 
 
-def _normalize_spotify_url(url: str) -> str:
-    """Normalize Spotify URL for comparison: strip query params, fragments, trailing slash."""
-    if not url:
-        return ""
-    parsed = urlparse(url)
-    # Reconstruct URL with just scheme, netloc, and path (no query or fragment)
-    normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/").lower()
-    return normalized
+def _get_playlists_db_id():
+    """Get Playlists database ID dynamically (always gets current value from config)."""
+    from config import NOTION_PLAYLISTS_DB_ID
+    return NOTION_PLAYLISTS_DB_ID
 
 
 def _find_playlist_by_spotify_url(spotify_url: str, db_id: str) -> "tuple[str, str] | None":
@@ -48,11 +44,16 @@ def _batch_lookup_playlists(playlist_ids: list, registry: dict, db_id: str) -> N
         return
 
     log.info("Pre-flight: checking %d unregistered playlist ID(s) in Notion", len(playlist_ids))
+
+    # Verify database ID
+    if db_id == "missing":
+        log.error("Pre-flight: database ID is 'missing' — databases not configured")
+        return
+
     try:
         found_count = 0
         for chunk in _chunks(playlist_ids, 50):
             time.sleep(0.35)
-            log.debug("Pre-flight: querying Notion with %d playlist URLs", len(chunk))
             result = _notion_post(f"databases/{db_id}/query", {
                 "filter": {"or": [
                     {"property": "Spotify URL", "url": {"equals": f"https://open.spotify.com/playlist/{pid}"}}
@@ -60,23 +61,14 @@ def _batch_lookup_playlists(playlist_ids: list, registry: dict, db_id: str) -> N
                 ]},
                 "page_size": len(chunk),
             })
-            log.debug("Pre-flight: Notion returned %d playlist result(s)", len(result.get("results", [])))
-            now = datetime.now(timezone.utc).isoformat()
             for page in result.get("results", []):
                 url = page.get("properties", {}).get("Spotify URL", {}).get("url")
                 if url:
-                    # Extract Spotify ID from URL
                     playlist_id = url.split("/")[-1]
                     if playlist_id and playlist_id not in registry:
                         name = _page_title(page)
-                        registry[playlist_id] = {
-                            "notion_page_id": page["id"],
-                            "name": name,
-                            "status": "pre_existing",
-                            "first_seen": now,
-                            "last_synced": now,
-                            "history": [{"action": "found_existing", "timestamp": now}],
-                        }
+                        registry[playlist_id] = _make_registry_entry(
+                            page["id"], name, "found_existing")
                         found_count += 1
                         log.info("Pre-flight: matched playlist %r by Spotify URL", name)
         log.info("Pre-flight: batch playlist lookup complete — found %d/%d", found_count, len(playlist_ids))
@@ -153,7 +145,6 @@ def _ensure_playlist(playlist: dict, registry: dict,
     """
     spotify_id = playlist["id"]
     spotify_url = f"https://open.spotify.com/playlist/{spotify_id}"
-    now = datetime.now(timezone.utc).isoformat()
 
     # Fast path: if pre-flight batch found this playlist by Spotify URL, auto-accept (no dialog)
     if spotify_id in registry:
@@ -177,27 +168,14 @@ def _ensure_playlist(playlist: dict, registry: dict,
         if result:
             match_id, match_name = result
             # Check if it has a different Spotify URL (if so, exclude it)
-            notion_page = _notion_post(f"pages/{match_id}")
+            notion_page = _notion_request("GET", f"pages/{match_id}")
             notion_spotify_url = notion_page.get("properties", {}).get("Spotify URL", {}).get("url")
             if not notion_spotify_url or _normalize_spotify_url(notion_spotify_url) == _normalize_spotify_url(spotify_url):
                 exact = [{"id": match_id, "name": match_name, "spotify_url": notion_spotify_url}]
 
         time.sleep(0.35)
         similar = _search_similar_playlists(playlist["name"], db_id)
-
-        # Merge: exact matches first, deduplicated
-        # Filter out candidates with different Spotify URLs (impossible matches)
-        seen_ids = set()
-        candidates = []
-        for c in exact + similar:
-            if c["id"] in seen_ids:
-                continue
-            # Reject if candidate has a Spotify URL that differs from the playlist's URL
-            if c.get("spotify_url") and _normalize_spotify_url(c["spotify_url"]) != _normalize_spotify_url(spotify_url):
-                log.debug("Rejecting playlist candidate %r: different Spotify URL", c["name"])
-                continue
-            candidates.append(c)
-            seen_ids.add(c["id"])
+        candidates = _merge_candidates(exact, similar, spotify_url)
 
         if match_cb:
             display_with_url = playlist["name"]
@@ -219,26 +197,14 @@ def _ensure_playlist(playlist: dict, registry: dict,
 
     if notion_id:
         log.debug("Registering playlist %r as pre_existing", playlist["name"])
-        registry[spotify_id] = {
-            "notion_page_id": notion_id,
-            "name": playlist["name"],
-            "db_id": db_id,
-            "status": "pre_existing",
-            "first_seen": now, "last_synced": now,
-            "history": [{"action": "found_existing", "timestamp": now}],
-        }
+        registry[spotify_id] = _make_registry_entry(
+            notion_id, playlist["name"], "found_existing", db_id=db_id)
         return notion_id, "pre_existing"
 
     time.sleep(0.35)
     notion_id = _create_playlist_in_notion(playlist, db_id)
-    registry[spotify_id] = {
-        "notion_page_id": notion_id,
-        "name": playlist["name"],
-        "db_id": db_id,
-        "status": "added",
-        "first_seen": now, "last_synced": now,
-        "history": [{"action": "added", "timestamp": now}],
-    }
+    registry[spotify_id] = _make_registry_entry(
+        notion_id, playlist["name"], "added", db_id=db_id)
     log.info("Created Notion playlist: %r", playlist["name"])
     return notion_id, "added"
 

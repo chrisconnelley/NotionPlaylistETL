@@ -164,13 +164,6 @@
         ]
       }
     },
-    "Automation Complete": {
-      "id": "L_LI",
-      "name": "Automation Complete",
-      "description": null,
-      "type": "checkbox",
-      "checkbox": {}
-    },
     "Playlist Order": {
       "id": "LtcM",
       "name": "Playlist Order",
@@ -370,13 +363,6 @@
         "type": "single_property",
         "single_property": {}
       }
-    },
-    "complete": {
-      "id": "ji_U",
-      "name": "complete",
-      "description": null,
-      "type": "checkbox",
-      "checkbox": {}
     },
     "Genre": {
       "id": "qVfC",

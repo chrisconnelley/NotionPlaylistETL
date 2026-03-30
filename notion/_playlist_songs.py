@@ -1,19 +1,52 @@
 import time
 import traceback
-from datetime import datetime, timezone
 
-from config import NOTION_PLAYLISTS_DB_ID, NOTION_PLAYLIST_SONGS_DB_ID
+from config import NOTION_SONGS_DB_ID, NOTION_PLAYLISTS_DB_ID, NOTION_PLAYLIST_SONGS_DB_ID
 from logger import log
 from notion._api import _notion_post, _notion_request, _notion_get
-from notion._artists import _ensure_artist, _batch_lookup_artists
+from notion._helpers import _make_registry_entry
+from notion._artists import _ensure_artist, _batch_lookup_artists, _fetch_artist_details
 from notion._songs import _ensure_song, _batch_lookup_songs
 
-# Playlist songs database configuration
-_PLAYLIST_SONGS_CONFIG = {
-    "db_id":             NOTION_PLAYLIST_SONGS_DB_ID,
-    "song_relation":     "Song",
-    "playlist_relation": "Playlist",
-}
+# Cached config — discovered once per session
+_PLAYLIST_SONGS_CONFIG = None
+
+
+def _get_playlist_songs_config() -> dict:
+    """Discover actual relation property names from the Playlist Songs database.
+    Notion's dual_property relations may auto-generate names different from the schema."""
+    global _PLAYLIST_SONGS_CONFIG
+    if _PLAYLIST_SONGS_CONFIG is not None:
+        return _PLAYLIST_SONGS_CONFIG
+
+    db_id = NOTION_PLAYLIST_SONGS_DB_ID
+    songs_db_id = NOTION_SONGS_DB_ID
+    playlists_db_id = NOTION_PLAYLISTS_DB_ID
+
+    # Defaults — match the schema property names
+    song_rel = "Song"
+    playlist_rel = "Playlist"
+
+    try:
+        db_info = _notion_get(f"databases/{db_id}")
+        for prop_name, prop_def in db_info.get("properties", {}).items():
+            if prop_def.get("type") != "relation":
+                continue
+            target_db = prop_def.get("relation", {}).get("database_id", "").replace("-", "")
+            if target_db == songs_db_id.replace("-", ""):
+                song_rel = prop_name
+            elif target_db == playlists_db_id.replace("-", ""):
+                playlist_rel = prop_name
+        log.info("Playlist Songs config: song=%r, playlist=%r", song_rel, playlist_rel)
+    except Exception:
+        log.warning("Could not discover relation names — using defaults")
+
+    _PLAYLIST_SONGS_CONFIG = {
+        "db_id": db_id,
+        "song_relation": song_rel,
+        "playlist_relation": playlist_rel,
+    }
+    return _PLAYLIST_SONGS_CONFIG
 
 
 def _lyrics_blocks(lyrics: str) -> list:
@@ -195,9 +228,6 @@ def _ensure_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
     """
     spotify_url = track.get("Spotify URL", "")
     reg_key = f"{playlist_spotify_id}:{spotify_url}"
-    now = datetime.now(timezone.utc).isoformat()
-
-    existing_id = None
 
     # Step 1: search Notion (always check Notion first, don't use registry cache)
     time.sleep(0.35)
@@ -212,25 +242,15 @@ def _ensure_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
         repair_result = _repair_playlist_song(
             existing_id, song_page_id, playlist_page_id, artist_page_ids, db_config,
             track_name=track["Track Name"])
-        registry[reg_key] = {
-            "notion_page_id": existing_id,
-            "name": track["Track Name"],
-            "status": "pre_existing",
-            "first_seen": now, "last_synced": now,
-            "history": [{"action": "found_existing", "timestamp": now}],
-        }
+        registry[reg_key] = _make_registry_entry(
+            existing_id, track["Track Name"], "found_existing")
         return "repaired" if repair_result else "pre_existing"
 
     time.sleep(0.35)
     page_id = _create_playlist_song(
         track, song_page_id, playlist_page_id, artist_page_ids, track_num, db_config)
-    registry[reg_key] = {
-        "notion_page_id": page_id,
-        "name": track["Track Name"],
-        "status": "added",
-        "first_seen": now, "last_synced": now,
-        "history": [{"action": "added", "timestamp": now}],
-    }
+    registry[reg_key] = _make_registry_entry(
+        page_id, track["Track Name"], "added")
     log.info("Created playlist song: %r (track %d)", track["Track Name"], track_num)
     return "added"
 
@@ -238,7 +258,8 @@ def _ensure_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
 def export_playlist_songs(tracks: list, playlist_spotify_id: str,
                           playlists_db_id: str,
                           sp=None, match_cb=None,
-                          progress_cb=None, stop_event=None) -> dict:
+                          progress_cb=None, stop_event=None,
+                          auto_create: bool = False) -> dict:
     """
     Create playlist song records. Exports missing songs/artists on the fly.
     Tracks are only skipped if they have no Spotify URL.
@@ -246,7 +267,7 @@ def export_playlist_songs(tracks: list, playlist_spotify_id: str,
     """
     from notion._playlists import _find_playlist_by_spotify_url
 
-    db_config = _PLAYLIST_SONGS_CONFIG
+    db_config = _get_playlist_songs_config()
 
     # Write-only registries for tracking created items
     songs_reg     = {}
@@ -278,24 +299,7 @@ def export_playlist_songs(tracks: list, playlist_spotify_id: str,
         a["id"] for t in tracks for a in t.get("Artists", [])
         if a["id"] not in artists_reg
     })
-    artist_details: dict = {}
-    if missing_artist_ids and sp:
-        for i in range(0, len(missing_artist_ids), 50):
-            batch = missing_artist_ids[i:i + 50]
-            try:
-                results = sp.artists(batch)
-                for a in (results.get("artists") or []):
-                    if a:
-                        artist_details[a["id"]] = {
-                            "name": a["name"], "id": a["id"],
-                            "spotify_url": a.get("external_urls", {}).get("spotify"),
-                            "genres": a.get("genres", []),
-                            "popularity": a.get("popularity"),
-                            "followers": (a.get("followers") or {}).get("total"),
-                            "image_url": a["images"][0]["url"] if a.get("images") else None,
-                        }
-            except Exception:
-                log.warning("Could not fetch artist details batch:\n%s", traceback.format_exc())
+    artist_details = _fetch_artist_details(sp, missing_artist_ids) if missing_artist_ids and sp else {}
 
     summary = {
         "added": 0, "pre_existing": 0, "repaired": 0, "skipped": 0,
@@ -327,12 +331,14 @@ def export_playlist_songs(tracks: list, playlist_spotify_id: str,
                         artist_stub["id"],
                         {"name": artist_stub["name"], "id": artist_stub["id"]},
                     )
-                    page_id, _ = _ensure_artist(info, artists_reg, match_cb=match_cb)
+                    page_id, _ = _ensure_artist(info, artists_reg, match_cb=match_cb,
+                                                    auto_create=auto_create)
                     if page_id:
                         artist_page_ids.append(page_id)
 
             if spotify_url not in songs_reg:
-                song_status = _ensure_song(track, artist_page_ids, songs_reg, match_cb=match_cb)
+                song_status = _ensure_song(track, artist_page_ids, songs_reg, match_cb=match_cb,
+                                             auto_create=auto_create)
                 if song_status == "skipped":
                     summary["skipped"] += 1
                     summary["skipped_names"].append(track["Track Name"])

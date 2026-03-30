@@ -1,11 +1,56 @@
 import re
 import traceback
+from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from logger import log
 from notion._api import _notion_get
 
 # Sentinel returned by match_cb when the user chooses to skip an item entirely.
 SKIP = "__skip__"
+
+
+def _normalize_spotify_url(url: str) -> str:
+    """Normalize Spotify URL: strip query params, fragments, trailing slash, lowercase."""
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/").lower()
+
+
+def _make_registry_entry(notion_page_id: str, name: str, action: str,
+                         **extra) -> dict:
+    """Build a standard registry entry dict. action is 'found_existing' or 'added'."""
+    now = datetime.now(timezone.utc).isoformat()
+    status = "pre_existing" if action == "found_existing" else action
+    entry = {
+        "notion_page_id": notion_page_id,
+        "name": name,
+        "status": status,
+        "first_seen": now,
+        "last_synced": now,
+        "history": [{"action": action, "timestamp": now}],
+    }
+    entry.update(extra)
+    return entry
+
+
+def _merge_candidates(exact: list, similar: list,
+                      spotify_url: str = "") -> list:
+    """Merge exact + similar candidate lists, dedup by ID, reject mismatched Spotify URLs."""
+    norm_input = _normalize_spotify_url(spotify_url) if spotify_url else ""
+    seen_ids = set()
+    candidates = []
+    for c in exact + similar:
+        if c["id"] in seen_ids:
+            continue
+        if c.get("spotify_url") and norm_input:
+            if _normalize_spotify_url(c["spotify_url"]) != norm_input:
+                log.debug("Rejecting candidate %r: different Spotify URL", c["name"])
+                continue
+        candidates.append(c)
+        seen_ids.add(c["id"])
+    return candidates
 
 
 def _chunks(lst: list, n: int):

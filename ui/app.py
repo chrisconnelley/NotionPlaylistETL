@@ -11,10 +11,11 @@ from cache import load_playlist_cache, save_playlist_cache
 from config import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, BASE_DIR
 from logger import log
 from notion._songs import _load_all_songs_cache
+from notion.check_setup import check_notion_setup, get_setup_instructions
 from spotify import get_spotify_client, fetch_user_playlists
 from theme import apply_theme, make_icon
 from ui.browser import PlaylistBrowser
-from ui.console import ConsoleTab
+from ui.console import SettingsTab
 from ui.playlist_tab import PlaylistTab
 
 
@@ -30,6 +31,7 @@ class App(tk.Tk):
         self._sp: spotipy.Spotify | None = None
         self._open_tabs: dict[str, str] = {}
         self._build_ui()
+        self._check_notion_setup()
         self._connect()
         # Load Notion songs cache in background (one-time load during app session)
         threading.Thread(target=_load_all_songs_cache, daemon=True).start()
@@ -41,7 +43,7 @@ class App(tk.Tk):
             BASE_DIR, f"etl_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         )
         try:
-            content = self._console.text.get("1.0", "end")
+            content = self._settings.text.get("1.0", "end")
             with open(log_path, "w", encoding="utf-8") as f:
                 f.write(content)
         except Exception as exc:
@@ -59,8 +61,125 @@ class App(tk.Tk):
         self.notebook.add(self.browser, text="Playlists")
         self.browser.bind("<<Refresh>>", lambda _: self._connect())
 
-        self._console = ConsoleTab(self.notebook)
-        self.notebook.add(self._console, text="Console")
+        self._settings = SettingsTab(self.notebook)
+        self.notebook.add(self._settings, text="Settings")
+        self._settings.set_reset_callback(self._on_notion_reset_complete)
+
+    # ------------------------------------------------------------------
+    # Notion setup check
+    # ------------------------------------------------------------------
+
+    def _on_notion_reset_complete(self):
+        """Called when Notion database reset is complete."""
+        log.info("Notion reset complete — checking for missing databases…")
+        # Reload config to pick up the "missing" database IDs
+        from notion.check_setup import _reload_config
+        _reload_config()
+        # Now check for missing databases and offer setup
+        self._check_notion_setup()
+
+    def _check_notion_setup(self):
+        """Check if Notion databases are configured. Offer setup if not."""
+        all_exist, missing = check_notion_setup()
+        if all_exist:
+            log.info("✓ Notion databases are accessible")
+            return
+
+        if not missing:
+            # API key not set
+            log.info("NOTION_API_KEY not set in .env — Notion features disabled")
+            return
+
+        # Some databases are missing — offer to set them up
+        log.warning(f"Missing Notion databases: {', '.join(missing)}")
+        instructions = get_setup_instructions()
+        result = messagebox.askokcancel(
+            "New Notion Teamspace Detected",
+            instructions
+        )
+        if result:
+            self._offer_notion_setup()
+
+    def _offer_notion_setup(self):
+        """Set up Notion databases in a new Teamspace."""
+        from tkinter import simpledialog
+        from notion.setup import setup_databases_in_page, update_config_file
+        from notion_config import NOTION_PARENT_PAGE_ID
+
+        # Use stored parent page ID if available
+        parent_page_id = NOTION_PARENT_PAGE_ID
+
+        if not parent_page_id:
+            # Ask for parent page ID where the setup should create things
+            instructions = (
+                "To set up the databases, I need a parent page ID in your Notion workspace.\n\n"
+                "Steps:\n"
+                "1. Open any page in your Notion workspace\n"
+                "2. Copy the page ID from the URL:\n"
+                "   https://www.notion.so/COPY_THIS_PART?...\n\n"
+                "3. Paste it here (just the ID, no spaces):"
+            )
+            parent_page_id = simpledialog.askstring(
+                "Parent Page Required",
+                instructions,
+            )
+
+            if parent_page_id is None:
+                log.info("Setup cancelled by user")
+                return
+
+            parent_page_id = parent_page_id.strip()
+            if not parent_page_id:
+                log.info("No parent page ID provided")
+                messagebox.showwarning(
+                    "Page ID Required",
+                    "You must provide a parent page ID to proceed with setup."
+                )
+                return
+        else:
+            log.info(f"Using stored parent page ID for setup")
+
+        log.info(f"Setting up Notion databases in new Teamspace (parent: {parent_page_id[:8]}...)")
+        try:
+            id_mapping = setup_databases_in_page(parent_page_id)
+            update_config_file(id_mapping, parent_page_id)
+            log.info("✓ Setup complete! Databases created and config updated.")
+            messagebox.showinfo(
+                "Setup Complete",
+                "✓ Notion databases created successfully!\n\n"
+                "A new 'MusicTunnel' page has been created with all four databases.\n"
+                "notion_config.py has been updated."
+            )
+            # Reload settings to recognize the new databases
+            self.after(500, self._on_notion_setup_complete)
+        except Exception as e:
+            log.error(f"Setup failed: {e}")
+            messagebox.showerror(
+                "Setup Failed",
+                f"Could not create databases:\n{e}\n\n"
+                "See the Settings tab for details."
+            )
+
+    def _on_notion_setup_complete(self):
+        """Called when Notion setup is complete — reload and verify."""
+        log.info("Notion setup complete! Reloading database connections…")
+        from notion.check_setup import _reload_config
+        _reload_config()
+        # Check if databases are now accessible
+        all_exist, missing = check_notion_setup()
+        if all_exist:
+            messagebox.showinfo(
+                "Setup Complete",
+                "✓ Notion databases are now ready to use!"
+            )
+            log.info("✓ All Notion databases verified and accessible")
+        else:
+            messagebox.showwarning(
+                "Setup Verification",
+                f"Setup completed, but could not verify all databases.\n"
+                f"Missing: {', '.join(missing)}\n\n"
+                f"Please check the Settings tab for details."
+            )
 
     # ------------------------------------------------------------------
     # Spotify connection

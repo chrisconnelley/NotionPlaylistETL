@@ -2,7 +2,6 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from config import NOTION_PLAYLISTS_DB_ID
 from logger import log
 from notion import export_tracks, export_playlist, export_playlist_songs
 from theme import BG, SURFACE, TEXT, TEXT_DIM
@@ -135,6 +134,21 @@ class ExportDialog(tk.Toplevel):
         self._stop_event.clear()
         threading.Thread(target=self._run, daemon=True).start()
 
+    def _ask_auto_create(self, unmatched_count, total_count, result_holder, done_event):
+        """Show a confirmation dialog for auto-creating unmatched items."""
+        from tkinter import messagebox
+        answer = messagebox.askyesno(
+            "Auto-Create New Records",
+            f"All {total_count} tracks have Spotify URLs.\n\n"
+            f"After checking Notion, {unmatched_count} song(s) were not found "
+            f"by Spotify URL.\n\n"
+            f"Create new records for all unmatched songs and artists?\n"
+            f"(Skips manual name-matching dialogs)",
+            parent=self,
+        )
+        result_holder["auto_create"] = answer
+        done_event.set()
+
     def _run(self):
         def match_cb(kind, item_name, candidates):
             result_holder = {}
@@ -144,7 +158,13 @@ class ExportDialog(tk.Toplevel):
             done_event.wait()
             return result_holder.get("choice")
 
+        # Get database ID dynamically (always current value)
+        from config import NOTION_PLAYLISTS_DB_ID
         db_id = NOTION_PLAYLISTS_DB_ID
+
+        # Check if auto-create is possible (all tracks have Spotify URLs)
+        all_have_urls = all(t.get("Spotify URL") for t in self._tracks)
+        auto_create = False
 
         # ── Phase 1: Playlist Record ──────────────────────────────────
         self.after(0, self._p1_status.set, "Creating/verifying playlist…")
@@ -184,6 +204,40 @@ class ExportDialog(tk.Toplevel):
             self.after(0, self._close_btn.configure, {"text": "Close"})
             return
 
+        # ── Auto-create prompt (if all tracks have Spotify URLs) ─────
+        if all_have_urls:
+            from notion._songs import _batch_lookup_songs, _load_all_songs_cache
+            from notion._artists import _batch_lookup_artists
+
+            self.after(0, self._p2_status.set, "Checking Notion for existing records…")
+            _load_all_songs_cache()
+
+            # Quick pre-flight to count unmatched songs
+            preview_songs_reg = {}
+            track_urls = [t["Spotify URL"] for t in self._tracks]
+            _batch_lookup_songs(track_urls, preview_songs_reg)
+            unmatched_songs = len(track_urls) - len(preview_songs_reg)
+
+            # Quick pre-flight to count unmatched artists
+            preview_artists_reg = {}
+            artist_ids = list({a["id"] for t in self._tracks for a in t.get("Artists", [])})
+            _batch_lookup_artists(artist_ids, preview_artists_reg)
+            unmatched_artists = len(artist_ids) - len(preview_artists_reg)
+
+            unmatched_total = unmatched_songs + unmatched_artists
+            if unmatched_total > 0:
+                result_holder = {}
+                done_event = threading.Event()
+                self.after(0, self._ask_auto_create,
+                           unmatched_songs, len(self._tracks),
+                           result_holder, done_event)
+                done_event.wait()
+                auto_create = result_holder.get("auto_create", False)
+
+                if auto_create:
+                    log.info("Auto-create enabled: %d unmatched song(s), %d unmatched artist(s)",
+                             unmatched_songs, unmatched_artists)
+
         # ── Phase 2: Songs & Artists ─────────────────────────────────
         self.after(0, self._p2_status.set, "Exporting…")
 
@@ -199,6 +253,7 @@ class ExportDialog(tk.Toplevel):
                 progress_cb=p2_progress,
                 stop_event=self._stop_event,
                 match_cb=match_cb,
+                auto_create=auto_create,
             )
         except ValueError as exc:
             self.after(0, self._show_error, str(exc))
@@ -237,6 +292,7 @@ class ExportDialog(tk.Toplevel):
                 match_cb=match_cb,
                 progress_cb=p3_progress,
                 stop_event=self._stop_event,
+                auto_create=auto_create,
             )
         except Exception:
             import traceback
@@ -283,7 +339,7 @@ class ExportDialog(tk.Toplevel):
             lines.append("")
         all_errors = tracks_summary.get("errors", []) + songs_summary.get("errors", [])
         if all_errors:
-            lines.append(f"Errors ({len(all_errors)}) — see Console tab:")
+            lines.append(f"Errors ({len(all_errors)}) — see Settings tab:")
             lines.extend(f"  {e['track']}: {e['error']}" for e in all_errors)
 
         self._summary_text.configure(state="normal")

@@ -188,13 +188,13 @@ class PlaylistTab(ttk.Frame):
                            "Playlist not found (404) — it may have been deleted.")
             else:
                 self.after(0, self._set_error,
-                           f"Spotify error {exc.http_status} — see Console tab.")
+                           f"Spotify error {exc.http_status} — see Settings tab.")
             return
         except Exception:
             log.error("Failed to fetch tracks for %r:\n%s",
                       self._playlist["name"], traceback.format_exc())
             self.after(0, self._set_error,
-                       "Failed to load tracks — see Console tab for details.")
+                       "Failed to load tracks — see Settings tab for details.")
             return
 
         save_tracks_cache(self._playlist["id"], tracks)
@@ -304,4 +304,4 @@ class PlaylistTab(ttk.Frame):
             msg = traceback.format_exc()
             log.error("Export failed:\n%s", msg)
             messagebox.showerror("Export failed",
-                                 "Export failed — see Console tab for details.")
+                                 "Export failed — see Settings tab for details.")

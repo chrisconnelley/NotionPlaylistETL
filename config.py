@@ -19,7 +19,10 @@ TRACKS_CACHE_DIR = os.path.join(BASE_DIR, "tracks")
 os.makedirs(LYRICS_CACHE_DIR, exist_ok=True)
 os.makedirs(TRACKS_CACHE_DIR, exist_ok=True)
 
-NOTION_SONGS_DB_ID              = "8ccd2adb-8912-493c-afe1-1b06c3433828"
-NOTION_ARTISTS_DB_ID            = "d5367ed0-480a-4ccc-9ad4-bda5e56fbf91"
-NOTION_PLAYLISTS_DB_ID          = "5b0f6317-af53-401f-9741-3f862542f6cf"
-NOTION_PLAYLIST_SONGS_DB_ID     = "93b98cda-f7c4-4699-9eb2-a518feb9b7ac"
+# Import Notion DB IDs from notion_config (can be regenerated on new Teamspace)
+from notion_config import (
+    NOTION_SONGS_DB_ID,
+    NOTION_ARTISTS_DB_ID,
+    NOTION_PLAYLISTS_DB_ID,
+    NOTION_PLAYLIST_SONGS_DB_ID,
+)

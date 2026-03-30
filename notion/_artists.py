@@ -1,22 +1,13 @@
 import time
 import traceback
-from datetime import datetime, timezone
-from urllib.parse import urlparse
 
 from config import NOTION_ARTISTS_DB_ID
 from logger import log
 from notion._api import _notion_post, _notion_request
-from notion._helpers import SKIP, _apostrophe_variants, _page_title, _chunks
-
-
-def _normalize_spotify_url(url: str) -> str:
-    """Normalize Spotify URL for comparison: strip query params, fragments, trailing slash."""
-    if not url:
-        return ""
-    parsed = urlparse(url)
-    # Reconstruct URL with just scheme, netloc, and path (no query or fragment)
-    normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/").lower()
-    return normalized
+from notion._helpers import (
+    SKIP, _apostrophe_variants, _page_title, _chunks,
+    _normalize_spotify_url, _make_registry_entry, _merge_candidates,
+)
 
 
 def _batch_lookup_artists(artist_ids: list, registry: dict) -> None:
@@ -33,20 +24,13 @@ def _batch_lookup_artists(artist_ids: list, registry: dict) -> None:
                 "filter": {"or": [{"property": "Spotify Artist ID", "rich_text": {"equals": aid}} for aid in chunk]},
                 "page_size": len(chunk),
             })
-            now = datetime.now(timezone.utc).isoformat()
             for page in result.get("results", []):
                 artist_id_prop = page.get("properties", {}).get("Spotify Artist ID", {})
                 aid = "".join(t.get("plain_text", "") for t in artist_id_prop.get("rich_text", []))
                 if aid and aid not in registry:
                     name = _page_title(page)
-                    registry[aid] = {
-                        "notion_page_id": page["id"],
-                        "name": name,
-                        "status": "pre_existing",
-                        "first_seen": now,
-                        "last_synced": now,
-                        "history": [{"action": "found_existing", "timestamp": now}],
-                    }
+                    registry[aid] = _make_registry_entry(
+                        page["id"], name, "found_existing")
                     found_count += 1
                     log.info("Pre-flight: matched artist %r by Spotify Artist ID", name)
         log.info("Pre-flight: batch artist lookup complete — found %d/%d", found_count, len(artist_ids))
@@ -122,6 +106,28 @@ def _search_similar_artists_in_notion(name: str) -> list:
     return candidates
 
 
+def _fetch_artist_details(sp, artist_ids: list) -> dict:
+    """Fetch full artist details from Spotify in batches of 50. Returns {artist_id: info_dict}."""
+    details = {}
+    for i in range(0, len(artist_ids), 50):
+        batch = artist_ids[i:i + 50]
+        try:
+            results = sp.artists(batch)
+            for a in (results.get("artists") or []):
+                if a:
+                    details[a["id"]] = {
+                        "name": a["name"], "id": a["id"],
+                        "spotify_url": a.get("external_urls", {}).get("spotify"),
+                        "genres": a.get("genres", []),
+                        "popularity": a.get("popularity"),
+                        "followers": (a.get("followers") or {}).get("total"),
+                        "image_url": a["images"][0]["url"] if a.get("images") else None,
+                    }
+        except Exception:
+            log.warning("Could not fetch artist details batch:\n%s", traceback.format_exc())
+    return details
+
+
 def _backfill_artist_spotify_id(notion_page_id: str, artist_info: dict) -> None:
     properties: dict = {
         "Spotify Artist ID": {"rich_text": [{"text": {"content": artist_info["id"]}}]},
@@ -163,20 +169,29 @@ def _create_artist_in_notion(artist_info: dict) -> str:
 
 
 def _ensure_artist(artist_info: dict, registry: dict,
-                   match_cb=None) -> "tuple[str, str]":
+                   match_cb=None, auto_create: bool = False) -> "tuple[str, str]":
     """
     Return (notion_page_id, status) where status is 'pre_existing', 'added', or 'skipped'.
     match_cb(kind, item_name, candidates) -> notion_page_id | None
     Always checks Notion first. Registry tracks pre-flight ID matches (auto-accepted).
     Spotify Artist ID matches don't require user confirmation (100% definitive).
+    If auto_create=True, skip name-based matching and create directly when not ID-matched.
     """
     spotify_id = artist_info["id"]
-    now = datetime.now(timezone.utc).isoformat()
 
     # Fast path: if pre-flight batch found this artist by Spotify ID, auto-accept (no dialog)
     if spotify_id in registry:
         log.info("Artist %r auto-matched by Spotify Artist ID (definitive)", artist_info["name"])
         return registry[spotify_id]["notion_page_id"], "pre_existing"
+
+    # Auto-create: ID not found in Notion, skip name matching and create directly
+    if auto_create:
+        log.info("Artist %r not in Notion by ID — auto-creating", artist_info["name"])
+        time.sleep(0.35)
+        notion_id = _create_artist_in_notion(artist_info)
+        registry[spotify_id] = _make_registry_entry(
+            notion_id, artist_info["name"], "added")
+        return notion_id, "added"
 
     notion_id = None
 
@@ -185,31 +200,10 @@ def _ensure_artist(artist_info: dict, registry: dict,
     exact = _find_artist_by_name_in_notion(artist_info["name"])
     time.sleep(0.35)
     similar = _search_similar_artists_in_notion(artist_info["name"])
-
-    # Merge: exact matches first, deduplicated
-    # IMPORTANT: Filter out candidates with a different Spotify URL (impossible matches)
-    seen_ids = set()
-    candidates = []
-    for c in exact + similar:
-        if c["id"] in seen_ids:
-            continue
-        # Reject if candidate has a Spotify URL that differs from the artist's URL
-        if c.get("spotify_url") and artist_info.get("spotify_url"):
-            if c["spotify_url"] != artist_info["spotify_url"]:
-                norm_candidate = _normalize_spotify_url(c["spotify_url"])
-                norm_input = _normalize_spotify_url(artist_info["spotify_url"])
-                if norm_candidate != norm_input:
-                    log.debug("Rejecting candidate %r: different Spotify URL (%s vs %s)",
-                             c["name"], c["spotify_url"][-20:], artist_info["spotify_url"][-20:])
-                    continue
-        candidates.append(c)
-        seen_ids.add(c["id"])
+    candidates = _merge_candidates(exact, similar, artist_info.get("spotify_url", ""))
 
     if candidates:
-        log.info("Found %d candidate match(es) for artist %r (exact: %d, similar: %d)",
-                 len(candidates), artist_info["name"], len(exact), len(similar))
-    else:
-        log.debug("No exact or similar matches found for artist %r", artist_info["name"])
+        log.info("Found %d candidate(s) for artist %r", len(candidates), artist_info["name"])
 
     # Show all candidates in a single dialog (if match_cb available)
     if match_cb:
@@ -236,25 +230,14 @@ def _ensure_artist(artist_info: dict, registry: dict,
 
     if notion_id:
         log.info("Matched Notion artist: %r", artist_info["name"])
-        registry[spotify_id] = {
-            "notion_page_id": notion_id,
-            "name": artist_info["name"],
-            "status": "pre_existing",
-            "first_seen": now, "last_synced": now,
-            "history": [{"action": "found_existing", "timestamp": now}],
-        }
+        registry[spotify_id] = _make_registry_entry(
+            notion_id, artist_info["name"], "found_existing")
         return notion_id, "pre_existing"
 
     # No match found or user clicked "Create New" — always create for artists
     time.sleep(0.35)
     notion_id = _create_artist_in_notion(artist_info)
-    registry[spotify_id] = {
-        "notion_page_id": notion_id,
-        "name": artist_info["name"],
-        "status": "added",
-        "first_seen": now, "last_synced": now,
-        "history": [{"action": "added", "timestamp": now,
-                     "fields": [k for k in artist_info if artist_info[k] is not None]}],
-    }
+    registry[spotify_id] = _make_registry_entry(
+        notion_id, artist_info["name"], "added")
     log.info("Created Notion artist: %r", artist_info["name"])
     return notion_id, "added"
