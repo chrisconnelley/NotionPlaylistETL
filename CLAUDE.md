@@ -219,22 +219,49 @@ The Console tab includes a **Verify Schema** button that:
   - Registry is ephemeral per-export (no disk I/O overhead)
 - **Result**: From 60+ sequential Notion API calls per playlist down to ~5-10 calls
 
+### ✅ Unified Match Dialog with Spotify URL Hints (DONE)
+- **User benefit**: Single consolidated dialog showing all candidates (exact matches first, then similar), with Spotify URL disambiguation (last 4 chars)
+- **Implementation**:
+  - Combined exact name search + similarity search into single pass (no sequential dialogs)
+  - All candidates shown together, sorted (exact first, deduplicated)
+  - Spotify URL last-4 shown in dialog header and each listbox row for disambiguation
+  - URL normalization handles format variations (query params, fragments, trailing slash, case-insensitive)
+  - Dialog appears even with zero candidates, allowing user to choose "Create New" or "Skip"
+  - URL filtering: rejects candidates with different Spotify URLs (impossible matches)
+  - Applied to `_songs.py`, `_artists.py`, `_playlists.py`, `ui/match_dialog.py`
+- **Fixed bugs**:
+  - "Create New" button now properly creates records when clicked
+  - Match dialog was skipped for items with no candidates (now shows dialog in all interactive cases)
+  - False match candidates with different Spotify URLs now filtered out
+
+### ✅ Ephemeral Registries & Background Song Cache (DONE)
+- **Removed**: Persistent registry storage (`notion/_registry.py` deleted, registry persistence in config.py/ui modules removed)
+- **Implementation**:
+  - Registries created fresh per export, not stored to disk (ephemeral per-export lifecycle)
+  - Background song cache loaded at app startup (`_load_all_songs_cache()` in background thread)
+  - Pre-flight batch lookups use cached data (O(1) lookups) instead of API queries
+  - Cache automatically updated when new songs created during export
+  - Thread-safe with locking to prevent race conditions
+- **Impact**: Faster pre-flight lookups, cleaner registry lifecycle, no stale disk data
+
 ## Planned Improvements (Future)
 
 ### Remaining Bottlenecks & Issues
 
 **Match Accuracy**: False positives/negatives due to:
-- No string similarity scoring (exact match only)
+- No string similarity scoring (exact match only; Levenshtein distance could rank candidates)
 - Apostrophe variants don't handle diacritics (é, ñ, ü)
 - No artist disambiguation (100+ artists named "The Weeknd")
 - Search limited to first 10 results; real match might be #11
 
 **User Experience**:
-- Match dialog shows only page name; no preview
+- Export dialog is modal (grab_set) — prevents viewing Console during export
+- Match dialog shows only page name; no preview/details
 - No undo/rollback mechanism
 - Error messages show only last line (context lost)
 
 **Data Integrity**:
+- Known issue: Duplicate song records without Spotify URLs can be created in edge cases
 - Duplicate Playlist Song records if track appears twice (rare but possible)
 - Match dialog blocks indefinitely (no timeout)
 
