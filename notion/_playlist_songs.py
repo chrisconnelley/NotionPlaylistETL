@@ -124,7 +124,7 @@ def _create_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
 
 def _repair_playlist_song(page_id: str, song_page_id: str,
                           playlist_page_id: str, artist_page_ids: list,
-                          db_config: dict) -> "bool | None":
+                          db_config: dict, track_name: str = "") -> "bool | None":
     """PATCH missing relations on an existing playlist song page.
     Returns True=repaired, False=already correct, None=wrong DB or archived (skip).
     """
@@ -165,7 +165,17 @@ def _repair_playlist_song(page_id: str, song_page_id: str,
 
     try:
         _notion_request("PATCH", f"pages/{page_id}", json={"properties": patch})
-        log.info("Repaired playlist song %s: set %s", page_id[:12], ", ".join(patch.keys()))
+        # Build more informative log message
+        repaired_fields = []
+        if "Song" in patch or db_config["song_relation"] in patch:
+            repaired_fields.append("Song link")
+        if "Playlist" in patch or db_config["playlist_relation"] in patch:
+            repaired_fields.append("Playlist link")
+        if "👩🏼\u200d🎤 Song Artists" in patch:
+            repaired_fields.append("Artist links")
+
+        song_info = f" '{track_name}'" if track_name else ""
+        log.info("Repaired playlist song%s: set %s", song_info, ", ".join(repaired_fields))
         return True
     except Exception as e:
         # If patching fails due to archived blocks, skip gracefully
@@ -200,7 +210,8 @@ def _ensure_playlist_song(track: dict, song_page_id: str, playlist_page_id: str,
     if existing_id:
         time.sleep(0.35)
         repair_result = _repair_playlist_song(
-            existing_id, song_page_id, playlist_page_id, artist_page_ids, db_config)
+            existing_id, song_page_id, playlist_page_id, artist_page_ids, db_config,
+            track_name=track["Track Name"])
         registry[reg_key] = {
             "notion_page_id": existing_id,
             "name": track["Track Name"],

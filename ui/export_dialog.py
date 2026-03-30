@@ -4,7 +4,7 @@ from tkinter import ttk
 
 from config import NOTION_PLAYLISTS_DB_ID
 from logger import log
-from notion import export_tracks, export_playlist, export_playlist_songs, validate_registry
+from notion import export_tracks, export_playlist, export_playlist_songs
 from theme import BG, SURFACE, TEXT, TEXT_DIM
 from ui.match_dialog import NotionMatchDialog
 
@@ -114,14 +114,6 @@ class ExportDialog(tk.Toplevel):
                                      state="disabled" if self._missing_count else "normal")
         self._start_btn.pack(side="right", padx=(0, 6))
 
-        self._validate_btn = ttk.Button(btn_bar, text="Validate Registry",
-                                        command=self._validate_registry)
-        self._validate_btn.pack(side="left")
-
-        self._verify_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(btn_bar, text="Verify cached",
-                        variable=self._verify_var).pack(side="left", padx=(8, 0))
-
     # ------------------------------------------------------------------
     # Match dialog (called on main thread; blocks the export thread)
     # ------------------------------------------------------------------
@@ -201,22 +193,12 @@ class ExportDialog(tk.Toplevel):
                        f"Track {current} / {total}" +
                        (f"  —  {track_name[:50]}" if track_name else ""))
 
-        def status_cb(spotify_url, display_status):
-            self.after(0, self._parent_tab.update_notion_status, spotify_url, display_status)
-
-        def artist_status_cb(spotify_url, display_status):
-            self.after(0, self._parent_tab.update_artist_notion_status,
-                       spotify_url, display_status)
-
         try:
             tracks_summary = export_tracks(
                 self._tracks, self._sp,
                 progress_cb=p2_progress,
-                status_cb=status_cb,
-                artist_status_cb=artist_status_cb,
                 stop_event=self._stop_event,
                 match_cb=match_cb,
-                verify_batch=self._verify_var.get(),
             )
         except ValueError as exc:
             self.after(0, self._show_error, str(exc))
@@ -315,47 +297,6 @@ class ExportDialog(tk.Toplevel):
         self._p1_status.set(f"Error: {msg}")
         self._close_btn.configure(text="Close")
         self._start_btn.configure(state="normal" if not self._missing_count else "disabled")
-
-    # ------------------------------------------------------------------
-    # Validate Registry
-    # ------------------------------------------------------------------
-
-    def _validate_registry(self):
-        self._validate_btn.configure(state="disabled")
-        self._p1_status.set("Validating registry against Notion…")
-        self._p1_bar.configure(mode="indeterminate")
-        self._p1_bar.start(12)
-        threading.Thread(target=self._run_validation, daemon=True).start()
-
-    def _run_validation(self):
-        try:
-            def progress_cb(current, total, entry_name):
-                self.after(0, self._p1_status.set,
-                           f"Checking {current + 1} / {total}: {entry_name[:50]}")
-
-            song_keys   = {t.get("Spotify URL") for t in self._tracks if t.get("Spotify URL")}
-            artist_keys = {a["id"] for t in self._tracks for a in t.get("Artists", [])}
-
-            a_removed, a_kept = validate_registry("artists", progress_cb=progress_cb,
-                                                   keys=artist_keys)
-            s_removed, s_kept = validate_registry("songs",   progress_cb=progress_cb,
-                                                   keys=song_keys)
-            msg = (f"Validation complete — "
-                   f"artists: {a_removed} removed, {a_kept} kept  |  "
-                   f"songs: {s_removed} removed, {s_kept} kept")
-            self.after(0, self._validation_done, msg)
-        except Exception:
-            import traceback
-            self.after(0, self._validation_done,
-                       f"Validation error: {traceback.format_exc().splitlines()[-1]}")
-
-    def _validation_done(self, msg: str):
-        self._p1_bar.stop()
-        self._p1_bar.configure(mode="determinate")
-        self._p1_status.set(msg)
-        self._validate_btn.configure(state="normal")
-
-    # ------------------------------------------------------------------
 
     def _on_close(self):
         self._stop_event.set()

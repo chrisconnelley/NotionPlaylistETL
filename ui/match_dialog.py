@@ -47,14 +47,21 @@ class NotionMatchDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._create_new)
 
     def _build_ui(self):
-        ttk.Label(self, text=f'No match found for "{self._item_name}"',
-                  font=(None, 11, "bold")).pack(padx=16, pady=(14, 4), anchor="w")
-        ttk.Label(self,
-                  text=f"Select an existing Notion {self._item_type.lower()} to link, "
-                       "or create a new record.",
-                  foreground=TEXT_DIM).pack(padx=16, pady=(0, 10), anchor="w")
+        # Title with item type
+        ttk.Label(self, text=f"Match {self._item_type}",
+                  font=(None, 11, "bold")).pack(padx=16, pady=(14, 2), anchor="w")
 
-        ttk.Separator(self, orient="horizontal").pack(fill="x", padx=16, pady=(0, 10))
+        # From Spotify section
+        ttk.Label(self, text="From Spotify:",
+                  font=(None, 9), foreground=TEXT_DIM).pack(padx=16, pady=(4, 2), anchor="w")
+        ttk.Label(self, text=f'"{self._item_name}"',
+                  font=(None, 10)).pack(padx=32, pady=(0, 8), anchor="w")
+
+        # Options section
+        ttk.Label(self, text="Existing options in Notion:",
+                  font=(None, 9), foreground=TEXT_DIM).pack(padx=16, pady=(0, 4), anchor="w")
+
+        ttk.Separator(self, orient="horizontal").pack(fill="x", padx=16, pady=(0, 8))
 
         list_frame = ttk.Frame(self)
         list_frame.pack(fill="both", expand=True, padx=16)
@@ -76,7 +83,10 @@ class NotionMatchDialog(tk.Toplevel):
 
         if self._candidates:
             for c in self._candidates:
-                self._listbox.insert("end", c["name"])
+                display = c["name"]
+                if c.get("spotify_url"):
+                    display += f"  […{c['spotify_url'][-4:]}]"
+                self._listbox.insert("end", display)
             self._listbox.selection_set(0)  # pre-select first for easy confirmation
             self._listbox.see(0)
         else:

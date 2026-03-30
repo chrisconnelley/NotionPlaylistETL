@@ -1,11 +1,22 @@
 import time
 import traceback
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from config import NOTION_ARTISTS_DB_ID
 from logger import log
 from notion._api import _notion_post, _notion_request
 from notion._helpers import SKIP, _apostrophe_variants, _page_title, _chunks
+
+
+def _normalize_spotify_url(url: str) -> str:
+    """Normalize Spotify URL for comparison: strip query params, fragments, trailing slash."""
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    # Reconstruct URL with just scheme, netloc, and path (no query or fragment)
+    normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/").lower()
+    return normalized
 
 
 def _batch_lookup_artists(artist_ids: list, registry: dict) -> None:
@@ -57,15 +68,27 @@ def _find_artist_in_notion(spotify_artist_id: str) -> "tuple[str, str] | None":
     return pages[0]["id"], _page_title(pages[0])
 
 
-def _find_artist_by_name_in_notion(name: str) -> "tuple[str, str] | None":
+def _find_artist_by_name_in_notion(name: str) -> list:
+    """Find artists by exact name match. Returns list of candidate dicts with id, name, spotify_url."""
     result = _notion_post(f"databases/{NOTION_ARTISTS_DB_ID}/query", {
         "filter": {"property": "Name", "title": {"equals": name}},
-        "page_size": 1,
+        "page_size": 10,
     })
-    pages = result.get("results", [])
-    if not pages:
-        return None
-    return pages[0]["id"], _page_title(pages[0])
+    candidates = []
+    seen_ids = set()
+    for page in result.get("results", []):
+        if page["id"] in seen_ids:
+            continue
+        page_name = _page_title(page)
+        if page_name:
+            spotify_url = page.get("properties", {}).get("Spotify URL", {}).get("url")
+            candidates.append({
+                "id": page["id"],
+                "name": page_name,
+                "spotify_url": spotify_url,
+            })
+            seen_ids.add(page["id"])
+    return candidates
 
 
 def _search_similar_artists_in_notion(name: str) -> list:
@@ -89,7 +112,12 @@ def _search_similar_artists_in_notion(name: str) -> list:
             continue
         page_name = _page_title(page)
         if page_name:
-            candidates.append({"id": page["id"], "name": page_name})
+            spotify_url = page.get("properties", {}).get("Spotify URL", {}).get("url")
+            candidates.append({
+                "id": page["id"],
+                "name": page_name,
+                "spotify_url": spotify_url,
+            })
             seen_ids.add(page["id"])
     return candidates
 
@@ -152,40 +180,59 @@ def _ensure_artist(artist_info: dict, registry: dict,
 
     notion_id = None
 
-    # Step 2: exact name match (Step 1 — ID lookup — is handled by pre-flight batch)
+    # Combined search: exact + similar matches (all at once)
     time.sleep(0.35)
-    result = _find_artist_by_name_in_notion(artist_info["name"])
-    if result:
-        match_id, match_name = result
-        if match_cb:
-            choice = match_cb("artist", artist_info["name"],
-                              [{"id": match_id, "name": match_name}])
-            if choice == SKIP:
-                return None, "skipped"
-            notion_id = choice
-        else:
-            notion_id = match_id
-        if notion_id == match_id:
-            try:
-                _backfill_artist_spotify_id(match_id, artist_info)
-            except Exception:
-                log.warning("Could not backfill artist %r:\n%s",
-                            artist_info["name"], traceback.format_exc())
+    exact = _find_artist_by_name_in_notion(artist_info["name"])
+    time.sleep(0.35)
+    similar = _search_similar_artists_in_notion(artist_info["name"])
 
-    # Step 3: interactive similar-name search
-    if not notion_id and match_cb:
-        time.sleep(0.35)
-        candidates = _search_similar_artists_in_notion(artist_info["name"])
-        choice = match_cb("artist", artist_info["name"], candidates)
+    # Merge: exact matches first, deduplicated
+    # IMPORTANT: Filter out candidates with a different Spotify URL (impossible matches)
+    seen_ids = set()
+    candidates = []
+    for c in exact + similar:
+        if c["id"] in seen_ids:
+            continue
+        # Reject if candidate has a Spotify URL that differs from the artist's URL
+        if c.get("spotify_url") and artist_info.get("spotify_url"):
+            if c["spotify_url"] != artist_info["spotify_url"]:
+                norm_candidate = _normalize_spotify_url(c["spotify_url"])
+                norm_input = _normalize_spotify_url(artist_info["spotify_url"])
+                if norm_candidate != norm_input:
+                    log.debug("Rejecting candidate %r: different Spotify URL (%s vs %s)",
+                             c["name"], c["spotify_url"][-20:], artist_info["spotify_url"][-20:])
+                    continue
+        candidates.append(c)
+        seen_ids.add(c["id"])
+
+    if candidates:
+        log.info("Found %d candidate match(es) for artist %r (exact: %d, similar: %d)",
+                 len(candidates), artist_info["name"], len(exact), len(similar))
+    else:
+        log.debug("No exact or similar matches found for artist %r", artist_info["name"])
+
+    # Show all candidates in a single dialog (if match_cb available)
+    if candidates and match_cb:
+        # Append last-4 of Spotify URL to display for disambiguation
+        spotify_suffix = f"  […{artist_info['spotify_url'][-4:]}]" if artist_info.get("spotify_url") else ""
+        display_with_url = artist_info["name"] + spotify_suffix
+        choice = match_cb("artist", display_with_url, candidates)
         if choice == SKIP:
             return None, "skipped"
-        if choice:
-            try:
-                _backfill_artist_spotify_id(choice, artist_info)
-            except Exception:
-                log.warning("Could not backfill artist %r:\n%s",
-                            artist_info["name"], traceback.format_exc())
+        if choice is not None:
+            # User selected a match
             notion_id = choice
+    elif candidates and not match_cb:
+        # Programmatic mode: auto-accept first match
+        notion_id = candidates[0]["id"]
+
+    # Backfill if a match was selected
+    if notion_id:
+        try:
+            _backfill_artist_spotify_id(notion_id, artist_info)
+        except Exception:
+            log.warning("Could not backfill artist %r:\n%s",
+                        artist_info["name"], traceback.format_exc())
 
     if notion_id:
         log.info("Matched Notion artist: %r", artist_info["name"])
@@ -198,6 +245,7 @@ def _ensure_artist(artist_info: dict, registry: dict,
         }
         return notion_id, "pre_existing"
 
+    # No match found or user clicked "Create New" — always create for artists
     time.sleep(0.35)
     notion_id = _create_artist_in_notion(artist_info)
     registry[spotify_id] = {

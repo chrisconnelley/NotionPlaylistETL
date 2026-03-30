@@ -10,6 +10,7 @@ import spotipy
 from cache import load_playlist_cache, save_playlist_cache
 from config import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, BASE_DIR
 from logger import log
+from notion._songs import _load_all_songs_cache
 from spotify import get_spotify_client, fetch_user_playlists
 from theme import apply_theme, make_icon
 from ui.browser import PlaylistBrowser
@@ -30,6 +31,8 @@ class App(tk.Tk):
         self._open_tabs: dict[str, str] = {}
         self._build_ui()
         self._connect()
+        # Load Notion songs cache in background (one-time load during app session)
+        threading.Thread(target=_load_all_songs_cache, daemon=True).start()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _on_close(self):

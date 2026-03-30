@@ -1,11 +1,22 @@
 import time
 import traceback
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from config import NOTION_PLAYLISTS_DB_ID
 from logger import log
 from notion._api import _notion_post, _notion_request
 from notion._helpers import SKIP, _apostrophe_variants, _page_title, _chunks
+
+
+def _normalize_spotify_url(url: str) -> str:
+    """Normalize Spotify URL for comparison: strip query params, fragments, trailing slash."""
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    # Reconstruct URL with just scheme, netloc, and path (no query or fragment)
+    normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/").lower()
+    return normalized
 
 
 def _find_playlist_by_spotify_url(spotify_url: str, db_id: str) -> "tuple[str, str] | None":
@@ -92,7 +103,12 @@ def _search_similar_playlists(name: str, db_id: str) -> list:
                 continue
             page_name = _page_title(page)
             if page_name:
-                candidates.append({"id": page["id"], "name": page_name})
+                spotify_url = page.get("properties", {}).get("Spotify URL", {}).get("url")
+                candidates.append({
+                    "id": page["id"],
+                    "name": page_name,
+                    "spotify_url": spotify_url,
+                })
                 seen_ids.add(page["id"])
         if candidates:
             return candidates
@@ -152,51 +168,55 @@ def _ensure_playlist(playlist: dict, registry: dict,
     if result:
         match_id, match_name = result
         log.info("Playlist %r found in Notion by Spotify URL", playlist["name"])
-        if match_cb:
-            choice = match_cb("playlist", playlist["name"],
-                              [{"id": match_id, "name": match_name}])
-            if choice == SKIP:
-                return None, "skipped"
-            notion_id = choice
-        else:
-            notion_id = match_id
-
-    # Step 2: exact name match
-    if not notion_id:
+        notion_id = match_id
+    else:
+        # Combined name-based search: exact + similar (all at once)
         time.sleep(0.35)
+        exact = []
         result = _find_playlist_by_name(playlist["name"], db_id)
         if result:
             match_id, match_name = result
-            log.info("Playlist %r found in Notion by exact name match", playlist["name"])
-            try:
-                _backfill_playlist_spotify_url(match_id, playlist)
-            except Exception:
-                log.warning("Could not backfill playlist %r:\n%s",
-                            playlist["name"], traceback.format_exc())
+            # Check if it has a different Spotify URL (if so, exclude it)
+            notion_page = _notion_post(f"pages/{match_id}")
+            notion_spotify_url = notion_page.get("properties", {}).get("Spotify URL", {}).get("url")
+            if not notion_spotify_url or _normalize_spotify_url(notion_spotify_url) == _normalize_spotify_url(spotify_url):
+                exact = [{"id": match_id, "name": match_name, "spotify_url": notion_spotify_url}]
+
+        time.sleep(0.35)
+        similar = _search_similar_playlists(playlist["name"], db_id)
+
+        # Merge: exact matches first, deduplicated
+        # Filter out candidates with different Spotify URLs (impossible matches)
+        seen_ids = set()
+        candidates = []
+        for c in exact + similar:
+            if c["id"] in seen_ids:
+                continue
+            # Reject if candidate has a Spotify URL that differs from the playlist's URL
+            if c.get("spotify_url") and _normalize_spotify_url(c["spotify_url"]) != _normalize_spotify_url(spotify_url):
+                log.debug("Rejecting playlist candidate %r: different Spotify URL", c["name"])
+                continue
+            candidates.append(c)
+            seen_ids.add(c["id"])
+
+        if candidates:
             if match_cb:
-                choice = match_cb("playlist", playlist["name"],
-                                  [{"id": match_id, "name": match_name}])
+                display_with_url = playlist["name"]
+                if any(c.get("spotify_url") for c in candidates):
+                    display_with_url += f"  […{spotify_url[-4:]}]"
+                choice = match_cb("playlist", display_with_url, candidates)
                 if choice == SKIP:
                     return None, "skipped"
-                notion_id = choice
+                if choice:
+                    notion_id = choice
+                    try:
+                        _backfill_playlist_spotify_url(choice, playlist)
+                    except Exception:
+                        log.warning("Could not backfill playlist %r:\n%s",
+                                   playlist["name"], traceback.format_exc())
             else:
-                notion_id = match_id
-
-    # Step 3: interactive similarity search
-    if not notion_id and match_cb:
-        time.sleep(0.35)
-        candidates = _search_similar_playlists(playlist["name"], db_id)
-        choice = match_cb("playlist", playlist["name"], candidates)
-        if choice == SKIP:
-            return None, "skipped"
-        if choice:
-            log.info("Playlist %r found in Notion by user-selected similarity match", playlist["name"])
-            try:
-                _backfill_playlist_spotify_url(choice, playlist)
-            except Exception:
-                log.warning("Could not backfill playlist %r:\n%s",
-                            playlist["name"], traceback.format_exc())
-            notion_id = choice
+                # Programmatic mode: auto-accept first match
+                notion_id = candidates[0]["id"]
 
     if notion_id:
         log.debug("Registering playlist %r as pre_existing", playlist["name"])
