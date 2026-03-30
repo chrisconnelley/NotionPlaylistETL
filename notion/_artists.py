@@ -212,7 +212,7 @@ def _ensure_artist(artist_info: dict, registry: dict,
         log.debug("No exact or similar matches found for artist %r", artist_info["name"])
 
     # Show all candidates in a single dialog (if match_cb available)
-    if candidates and match_cb:
+    if match_cb:
         # Append last-4 of Spotify URL to display for disambiguation
         spotify_suffix = f"  […{artist_info['spotify_url'][-4:]}]" if artist_info.get("spotify_url") else ""
         display_with_url = artist_info["name"] + spotify_suffix
@@ -222,7 +222,7 @@ def _ensure_artist(artist_info: dict, registry: dict,
         if choice is not None:
             # User selected a match
             notion_id = choice
-    elif candidates and not match_cb:
+    elif candidates:
         # Programmatic mode: auto-accept first match
         notion_id = candidates[0]["id"]
 

@@ -199,24 +199,23 @@ def _ensure_playlist(playlist: dict, registry: dict,
             candidates.append(c)
             seen_ids.add(c["id"])
 
-        if candidates:
-            if match_cb:
-                display_with_url = playlist["name"]
-                if any(c.get("spotify_url") for c in candidates):
-                    display_with_url += f"  […{spotify_url[-4:]}]"
-                choice = match_cb("playlist", display_with_url, candidates)
-                if choice == SKIP:
-                    return None, "skipped"
-                if choice:
-                    notion_id = choice
-                    try:
-                        _backfill_playlist_spotify_url(choice, playlist)
-                    except Exception:
-                        log.warning("Could not backfill playlist %r:\n%s",
-                                   playlist["name"], traceback.format_exc())
-            else:
-                # Programmatic mode: auto-accept first match
-                notion_id = candidates[0]["id"]
+        if match_cb:
+            display_with_url = playlist["name"]
+            if any(c.get("spotify_url") for c in candidates):
+                display_with_url += f"  […{spotify_url[-4:]}]"
+            choice = match_cb("playlist", display_with_url, candidates)
+            if choice == SKIP:
+                return None, "skipped"
+            if choice:
+                notion_id = choice
+                try:
+                    _backfill_playlist_spotify_url(choice, playlist)
+                except Exception:
+                    log.warning("Could not backfill playlist %r:\n%s",
+                               playlist["name"], traceback.format_exc())
+        elif candidates:
+            # Programmatic mode: auto-accept first match
+            notion_id = candidates[0]["id"]
 
     if notion_id:
         log.debug("Registering playlist %r as pre_existing", playlist["name"])

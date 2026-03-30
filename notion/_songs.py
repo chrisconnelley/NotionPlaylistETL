@@ -324,7 +324,7 @@ def _ensure_song(track: dict, artist_page_ids: list, registry: dict,
 
     # Show all candidates in a single dialog (if match_cb available)
     user_clicked_create_new = False
-    if candidates and match_cb:
+    if match_cb:
         # Append last-4 of Spotify URL to display for disambiguation
         spotify_suffix = f"  […{spotify_url[-4:]}]" if spotify_url else ""
         display_with_url = _display + spotify_suffix
@@ -336,7 +336,7 @@ def _ensure_song(track: dict, artist_page_ids: list, registry: dict,
             user_clicked_create_new = True
         else:
             notion_id = choice
-    elif candidates and not match_cb:
+    elif candidates:
         # Programmatic mode: auto-accept first match
         notion_id = candidates[0]["id"]
 
