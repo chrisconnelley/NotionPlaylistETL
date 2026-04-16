@@ -6,6 +6,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from logger import log, log_queue
 from notion import snapshot_schema
+from settings import load_settings, save_settings
 from theme import BG, SURFACE, TEXT, TEXT_DIM
 
 
@@ -19,6 +20,8 @@ class SettingsTab(ttk.Frame):
         "ERROR":   ("#e85d4a", None),
         "CRITICAL":(TEXT,      "#e85d4a"),
     }
+
+    _LEVEL_ORDER = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4}
 
     def __init__(self, parent: ttk.Notebook):
         super().__init__(parent)
@@ -40,6 +43,17 @@ class SettingsTab(ttk.Frame):
                    command=self._verify_schema).pack(side="left", padx=(0, 4))
         ttk.Button(btn_frame, text="Reset Notion Databases",
                    command=self._reset_notion_databases).pack(side="left")
+
+        level_frame = ttk.Frame(settings_frame)
+        level_frame.pack(anchor="w", pady=(6, 0))
+        ttk.Label(level_frame, text="Console log level:").pack(side="left", padx=(0, 6))
+        self._log_level_var = tk.StringVar(
+            value=load_settings().get("console_log_level", "DEBUG"))
+        level_combo = ttk.Combobox(level_frame, textvariable=self._log_level_var,
+                                   values=["DEBUG", "INFO", "WARNING", "ERROR"],
+                                   state="readonly", width=10)
+        level_combo.pack(side="left")
+        level_combo.bind("<<ComboboxSelected>>", self._on_log_level_changed)
 
         # ── Console Section ───────────────────────────────────────────
         console_label = ttk.Label(self, text="Console Output",
@@ -95,6 +109,10 @@ class SettingsTab(ttk.Frame):
                 level = lvl
                 break
 
+        threshold = self._LEVEL_ORDER.get(self._log_level_var.get(), 0)
+        if self._LEVEL_ORDER.get(level, 1) < threshold:
+            return
+
         self.text.configure(state="normal")
         self.text.insert("end", msg + "\n", level)
         self.text.configure(state="disabled")
@@ -124,6 +142,11 @@ class SettingsTab(ttk.Frame):
         self.text.configure(state="normal")
         self.text.delete("1.0", "end")
         self.text.configure(state="disabled")
+
+    def _on_log_level_changed(self, event=None):
+        s = load_settings()
+        s["console_log_level"] = self._log_level_var.get()
+        save_settings(s)
 
     def _verify_schema(self):
         """Run schema verification in background and log results."""

@@ -1,13 +1,16 @@
 import re
-import traceback
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from logger import log
-from notion._api import _notion_get
 
 # Sentinel returned by match_cb when the user chooses to skip an item entirely.
 SKIP = "__skip__"
+
+
+def _artist_spotify_url(artist_id: str) -> str:
+    """Construct canonical Spotify URL for an artist from their ID."""
+    return f"https://open.spotify.com/artist/{artist_id}"
 
 
 def _normalize_spotify_url(url: str) -> str:
@@ -97,18 +100,36 @@ def _page_title(page: dict) -> str:
 
 
 def _song_artist_names(page: dict) -> str:
-    """Extract artist names from a Songs page's Song Artists relation property."""
+    """Extract artist names from a Songs page's Song Artists relation property.
+    Resolves from the in-memory artist cache first, falls back to API only if needed."""
     relation = page.get("properties", {}).get("Song Artists", {}).get("relation", [])
     if not relation:
         return ""
+
+    # Try to resolve from the artists cache (avoids N API calls)
+    from notion._artists import _NOTION_ARTISTS_CACHE, _ARTISTS_CACHE_LOCK
     names = []
+    unresolved = []
+    with _ARTISTS_CACHE_LOCK:
+        cache_by_page_id = {v["notion_page_id"]: v["name"]
+                            for v in _NOTION_ARTISTS_CACHE.values()}
     for rel in relation[:5]:
-        try:
-            artist_page = _notion_get(f"pages/{rel['id']}")
-            artist_name = _page_title(artist_page)
-            if artist_name:
-                names.append(artist_name)
-        except Exception:
-            log.debug("Could not fetch artist page %s: %s",
-                      rel.get("id"), traceback.format_exc().splitlines()[-1])
+        cached_name = cache_by_page_id.get(rel["id"])
+        if cached_name:
+            names.append(cached_name)
+        else:
+            unresolved.append(rel["id"])
+
+    # Fallback: fetch unresolved artist pages individually via API
+    if unresolved:
+        from notion._api import _notion_get
+        for page_id in unresolved:
+            try:
+                artist_page = _notion_get(f"pages/{page_id}")
+                artist_name = _page_title(artist_page)
+                if artist_name:
+                    names.append(artist_name)
+            except Exception:
+                log.debug("Could not fetch artist page %s", page_id)
+
     return ", ".join(names)

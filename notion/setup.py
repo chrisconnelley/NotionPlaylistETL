@@ -340,7 +340,7 @@ def _integration_test_with_test_data(name_to_id: dict[str, str]) -> bool:
             "parent": {"database_id": artists_db_id},
             "properties": {
                 "Name": {"title": [{"text": {"content": "TEST ARTIST"}}]},
-                "Spotify Artist ID": {"rich_text": [{"text": {"content": "test-artist-id"}}]},
+                "Spotify URL": {"url": "https://open.spotify.com/artist/test-artist-id"},
             }
         })
         artist_id = artist_response["id"]

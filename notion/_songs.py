@@ -1,13 +1,11 @@
-import time
 import traceback
 import threading
 
-from config import NOTION_SONGS_DB_ID
 from logger import log
 from notion._api import _notion_post, _notion_request
 from notion._helpers import (
     SKIP, _page_title, _song_artist_names, _song_title_variants, _apostrophe_variants, _chunks,
-    _normalize_spotify_url, _make_registry_entry, _merge_candidates,
+    _normalize_spotify_url, _make_registry_entry, _merge_candidates, _artist_spotify_url,
 )
 from notion._artists import _ensure_artist, _batch_lookup_artists, _fetch_artist_details
 
@@ -17,12 +15,19 @@ _SONGS_CACHE_LOADED = False
 _SONGS_CACHE_LOCK = threading.Lock()
 
 
+def _get_songs_db_id():
+    """Get Songs database ID dynamically (always gets current value from config)."""
+    from config import NOTION_SONGS_DB_ID
+    return NOTION_SONGS_DB_ID
+
+
 def _load_all_songs_cache(force: bool = False) -> None:
     """Load all songs from Notion into memory cache. Safe to call multiple times."""
     global _NOTION_SONGS_CACHE, _SONGS_CACHE_LOADED
 
     # Skip if database ID is not configured (e.g., after reset)
-    if NOTION_SONGS_DB_ID == "missing":
+    songs_db_id = _get_songs_db_id()
+    if songs_db_id == "missing":
         log.debug("Skipping songs cache load — databases not configured")
         return
 
@@ -33,15 +38,14 @@ def _load_all_songs_cache(force: bool = False) -> None:
         log.info("Loading all songs from Notion into cache...")
         try:
             all_pages = []
-            result = _notion_post(f"databases/{NOTION_SONGS_DB_ID}/query", {
+            result = _notion_post(f"databases/{songs_db_id}/query", {
                 "page_size": 100,
             })
             all_pages.extend(result.get("results", []))
 
             # Handle pagination
             while result.get("has_more"):
-                time.sleep(0.35)
-                result = _notion_post(f"databases/{NOTION_SONGS_DB_ID}/query", {
+                result = _notion_post(f"databases/{songs_db_id}/query", {
                     "page_size": 100,
                     "start_cursor": result.get("next_cursor"),
                 })
@@ -117,7 +121,7 @@ def _batch_lookup_songs(urls: list, registry: dict) -> None:
 
 
 def _find_song_in_notion(spotify_url: str) -> "tuple[str, str] | None":
-    result = _notion_post(f"databases/{NOTION_SONGS_DB_ID}/query", {
+    result = _notion_post(f"databases/{_get_songs_db_id()}/query", {
         "filter": {"property": "Spotify URL", "url": {"equals": spotify_url}},
         "page_size": 1,
     })
@@ -131,21 +135,37 @@ def _find_song_in_notion(spotify_url: str) -> "tuple[str, str] | None":
     return page["id"], display
 
 
-def _find_song_by_name_in_notion(name: str) -> list:
-    """Find songs by exact name match. Returns list of candidate dicts with id, name, spotify_url."""
+def _search_songs_in_notion(name: str) -> list:
+    """Search for songs by exact + similar name in a single OR query.
+    Returns list of candidate dicts with id, name, spotify_url."""
     variants = _song_title_variants(name)
-    result = _notion_post(f"databases/{NOTION_SONGS_DB_ID}/query", {
-        "filter": {"or": [{"property": "Name", "title": {"equals": v}} for v in variants]},
-        "page_size": 10,
+    # Add first-word contains terms for broader matching
+    first_word = name.split()[0]
+    contains_terms = list(variants)
+    for v in _apostrophe_variants(first_word):
+        if v not in contains_terms:
+            contains_terms.append(v)
+
+    # Combine exact (equals) and fuzzy (contains) in one query
+    filters = [{"property": "Name", "title": {"equals": v}} for v in variants]
+    filters += [{"property": "Name", "title": {"contains": term}} for term in contains_terms]
+
+    log.debug("Searching songs for %r with %d filter conditions", name, len(filters))
+    result = _notion_post(f"databases/{_get_songs_db_id()}/query", {
+        "filter": {"or": filters},
+        "page_size": 20,
     })
+
     candidates = []
     seen_ids = set()
     for page in result.get("results", []):
         if page["id"] in seen_ids:
             continue
-        title = _page_title(page)
-        artists = _song_artist_names(page)
-        display = f"{title}  —  {artists}" if artists else title
+        page_name = _page_title(page)
+        if not page_name:
+            continue
+        artist_names = _song_artist_names(page)
+        display = f"{page_name}  —  {artist_names}" if artist_names else page_name
         spotify_url = page.get("properties", {}).get("Spotify URL", {}).get("url")
         candidates.append({
             "id": page["id"],
@@ -153,47 +173,8 @@ def _find_song_by_name_in_notion(name: str) -> list:
             "spotify_url": spotify_url,
         })
         seen_ids.add(page["id"])
-    return candidates
 
-
-def _search_similar_songs_in_notion(name: str) -> list:
-    """Search for similar songs using a single OR query across all search terms."""
-    seen_ids: set = set()
-    candidates: list = []
-    search_terms = _song_title_variants(name)
-    first_word = name.split()[0]
-    for v in _apostrophe_variants(first_word):
-        if v not in search_terms:
-            search_terms.append(v)
-
-    log.debug("Searching for similar songs to %r with terms: %s", name, search_terms[:3])
-
-    # Single OR query combining all contains conditions
-    result = _notion_post(f"databases/{NOTION_SONGS_DB_ID}/query", {
-        "filter": {"or": [{"property": "Name", "title": {"contains": term}} for term in search_terms]},
-        "page_size": 10,
-    })
-
-    all_results = result.get("results", [])
-    log.debug("Similarity search found %d total result(s) for %r", len(all_results), name)
-
-    for page in all_results:
-        if page["id"] in seen_ids:
-            continue
-        page_name = _page_title(page)
-        if page_name:
-            artist_names = _song_artist_names(page)
-            display = f"{page_name}  —  {artist_names}" if artist_names else page_name
-            spotify_url = page.get("properties", {}).get("Spotify URL", {}).get("url")
-            candidates.append({
-                "id": page["id"],
-                "name": display,
-                "spotify_url": spotify_url,
-            })
-            seen_ids.add(page["id"])
-            log.debug("  Candidate: %s", display)
-
-    log.info("Similarity search candidates for %r: %d result(s)", name, len(candidates))
+    log.info("Song search candidates for %r: %d result(s)", name, len(candidates))
     return candidates
 
 
@@ -230,7 +211,7 @@ def _create_song_in_notion(track: dict, artist_page_ids: list) -> str:
     if artist_page_ids:
         properties["Song Artists"] = {"relation": [{"id": pid} for pid in artist_page_ids]}
     result = _notion_post("pages", {
-        "parent": {"database_id": NOTION_SONGS_DB_ID},
+        "parent": {"database_id": _get_songs_db_id()},
         "properties": properties,
     })
     page_id = result["id"]
@@ -269,7 +250,6 @@ def _ensure_song(track: dict, artist_page_ids: list, registry: dict,
     # Auto-create: URL not found in Notion, skip name matching and create directly
     if auto_create:
         log.info("Song %r not in Notion by URL — auto-creating", track["Track Name"])
-        time.sleep(0.35)
         notion_id = _create_song_in_notion(track, artist_page_ids)
         registry[spotify_url] = _make_registry_entry(
             notion_id, track["Track Name"], "added")
@@ -279,12 +259,9 @@ def _ensure_song(track: dict, artist_page_ids: list, registry: dict,
 
     notion_id = None
 
-    # Combined search: exact + similar matches (all at once)
-    time.sleep(0.35)
-    exact = _find_song_by_name_in_notion(track["Track Name"])
-    time.sleep(0.35)
-    similar = _search_similar_songs_in_notion(track["Track Name"])
-    candidates = _merge_candidates(exact, similar, spotify_url)
+    # Combined search: exact + similar matches in one query
+    all_matches = _search_songs_in_notion(track["Track Name"])
+    candidates = _merge_candidates(all_matches, [], spotify_url)
 
     if candidates:
         log.info("Found %d candidate(s) for %r", len(candidates), track["Track Name"])
@@ -323,7 +300,6 @@ def _ensure_song(track: dict, artist_page_ids: list, registry: dict,
 
     # No match found, or user clicked "Create New" — create the record
     if not match_cb or user_clicked_create_new:
-        time.sleep(0.35)
         notion_id = _create_song_in_notion(track, artist_page_ids)
         registry[spotify_url] = _make_registry_entry(
             notion_id, track["Track Name"], "added")
@@ -365,7 +341,7 @@ def export_tracks(tracks: list, sp, progress_cb=None, stop_event=None,
     if unregistered_urls:
         _batch_lookup_songs(unregistered_urls, songs_reg)
     if unregistered_artist_ids:
-        _batch_lookup_artists(unregistered_artist_ids, artists_reg)
+        _batch_lookup_artists(unregistered_artist_ids, artists_reg, artist_details)
 
     summary = {
         "added_songs": 0, "existing_songs": 0, "skipped_songs": 0,
@@ -373,6 +349,7 @@ def export_tracks(tracks: list, sp, progress_cb=None, stop_event=None,
         "errors": [],
         "added_song_names": [], "existing_song_names": [],
         "added_artist_names": [], "existing_artist_names": [],
+        "created_song_page_ids": [], "created_artist_page_ids": [],
     }
 
     for i, track in enumerate(tracks):
@@ -380,7 +357,7 @@ def export_tracks(tracks: list, sp, progress_cb=None, stop_event=None,
             log.info("Notion export cancelled after %d tracks", i)
             break
         if progress_cb:
-            progress_cb(i, len(tracks), track.get("Track Name", ""))
+            progress_cb(i + 1, len(tracks), track.get("Track Name", ""))
 
         try:
             artist_page_ids = []
@@ -396,6 +373,8 @@ def export_tracks(tracks: list, sp, progress_cb=None, stop_event=None,
                 if status == "added":
                     summary["added_artists"] += 1
                     summary["added_artist_names"].append(info["name"])
+                    if page_id:
+                        summary["created_artist_page_ids"].append(page_id)
                 elif status == "pre_existing":
                     summary["pre_existing_artists"] += 1
                     summary["existing_artist_names"].append(info["name"])
@@ -407,6 +386,9 @@ def export_tracks(tracks: list, sp, progress_cb=None, stop_event=None,
             if song_status == "added":
                 summary["added_songs"] += 1
                 summary["added_song_names"].append(track["Track Name"])
+                song_page_id = songs_reg.get(track["Spotify URL"], {}).get("notion_page_id")
+                if song_page_id:
+                    summary["created_song_page_ids"].append(song_page_id)
             elif song_status == "skipped":
                 summary["skipped_songs"] += 1
             else:

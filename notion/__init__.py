@@ -5,6 +5,7 @@ from notion._schema import fetch_databases, snapshot_schema
 from notion._songs import export_tracks
 from notion._playlists import export_playlist
 from notion._playlist_songs import export_playlist_songs
+from notion._undo import undo_export
 
 __all__ = [
     "SKIP",
@@ -13,4 +14,5 @@ __all__ = [
     "export_tracks",
     "export_playlist",
     "export_playlist_songs",
+    "undo_export",
 ]

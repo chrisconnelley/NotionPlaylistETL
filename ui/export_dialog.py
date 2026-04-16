@@ -3,7 +3,8 @@ import tkinter as tk
 from tkinter import ttk
 
 from logger import log
-from notion import export_tracks, export_playlist, export_playlist_songs
+from notion import export_tracks, export_playlist, export_playlist_songs, undo_export
+from settings import load_settings, save_settings
 from theme import BG, SURFACE, TEXT, TEXT_DIM
 from ui.match_dialog import NotionMatchDialog
 
@@ -19,7 +20,6 @@ class ExportDialog(tk.Toplevel):
         self.title("Export to Notion")
         self.resizable(False, False)
         self.configure(bg=BG)
-        self.grab_set()
 
         self._parent_tab = parent_tab
         self._sp = sp
@@ -30,6 +30,9 @@ class ExportDialog(tk.Toplevel):
         missing = [t for t in tracks if not t.get("Artists")]
         self._missing_count = len(missing)
 
+        self._countdown_id = None
+        self._settings_data = load_settings()
+
         self._build_ui()
 
         self.update_idletasks()
@@ -38,6 +41,9 @@ class ExportDialog(tk.Toplevel):
         w, h = self.winfo_width(), self.winfo_height()
         self.geometry(f"+{px + (pw - w) // 2}+{py + (ph - h) // 2}")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        if self._auto_start.get() and not self._missing_count:
+            self._begin_countdown(5)
 
     # ------------------------------------------------------------------
     # UI
@@ -102,13 +108,23 @@ class ExportDialog(tk.Toplevel):
         self._summary_text.configure(yscrollcommand=_ssb.set)
 
         # Button bar
-        btn_bar = ttk.Frame(self)
-        btn_bar.pack(fill="x", padx=16, pady=(0, 14))
+        self._btn_bar = ttk.Frame(self)
+        self._btn_bar.pack(fill="x", padx=16, pady=(0, 14))
 
-        self._close_btn = ttk.Button(btn_bar, text="Cancel", command=self._on_close)
+        self._auto_start = tk.BooleanVar(value=self._settings_data.get("auto_start", False))
+        ttk.Checkbutton(self._btn_bar, text="Auto-start",
+                        variable=self._auto_start,
+                        command=self._on_auto_start_toggled).pack(side="left")
+
+        self._close_on_complete = tk.BooleanVar(value=self._settings_data.get("close_on_complete", False))
+        ttk.Checkbutton(self._btn_bar, text="Close on complete",
+                        variable=self._close_on_complete,
+                        command=self._save_prefs).pack(side="left", padx=(8, 0))
+
+        self._close_btn = ttk.Button(self._btn_bar, text="Cancel", command=self._on_close)
         self._close_btn.pack(side="right")
 
-        self._start_btn = ttk.Button(btn_bar, text="Start Export",
+        self._start_btn = ttk.Button(self._btn_bar, text="Start Export",
                                      command=self._start,
                                      state="disabled" if self._missing_count else "normal")
         self._start_btn.pack(side="right", padx=(0, 6))
@@ -125,24 +141,71 @@ class ExportDialog(tk.Toplevel):
         done_event.set()
 
     # ------------------------------------------------------------------
+    # Settings persistence
+    # ------------------------------------------------------------------
+
+    def _save_prefs(self):
+        s = load_settings()
+        s["auto_start"] = self._auto_start.get()
+        s["close_on_complete"] = self._close_on_complete.get()
+        save_settings(s)
+
+    def _on_auto_start_toggled(self):
+        self._save_prefs()
+        if self._auto_start.get():
+            if not self._missing_count:
+                self._begin_countdown(5)
+        else:
+            self._cancel_countdown()
+
+    # ------------------------------------------------------------------
+    # Auto-start countdown
+    # ------------------------------------------------------------------
+
+    def _begin_countdown(self, remaining: int):
+        if remaining <= 0:
+            self._countdown_id = None
+            self._start()
+            return
+        self._start_btn.configure(text=f"Starting in {remaining}\u2026")
+        self._countdown_id = self.after(1000, self._begin_countdown, remaining - 1)
+
+    def _cancel_countdown(self):
+        if self._countdown_id is not None:
+            self.after_cancel(self._countdown_id)
+            self._countdown_id = None
+            self._start_btn.configure(text="Start Export")
+
+    # ------------------------------------------------------------------
     # Export
     # ------------------------------------------------------------------
 
     def _start(self):
-        self._start_btn.configure(state="disabled")
+        self._cancel_countdown()
+        self._start_btn.configure(state="disabled", text="Start Export")
         self._close_btn.configure(text="Cancel")
         self._stop_event.clear()
         threading.Thread(target=self._run, daemon=True).start()
 
-    def _ask_auto_create(self, unmatched_count, total_count, result_holder, done_event):
+    def _ask_auto_create(self, unmatched_songs, unmatched_artists,
+                         playlist_unmatched, total_count, result_holder, done_event):
         """Show a confirmation dialog for auto-creating unmatched items."""
         from tkinter import messagebox
+        parts = []
+        if unmatched_songs:
+            parts.append(f"{unmatched_songs} song(s)")
+        if unmatched_artists:
+            parts.append(f"{unmatched_artists} artist(s)")
+        if playlist_unmatched:
+            parts.append("1 playlist")
+        unmatched_desc = ", ".join(parts)
         answer = messagebox.askyesno(
             "Auto-Create New Records",
-            f"All {total_count} tracks have Spotify URLs.\n\n"
-            f"After checking Notion, {unmatched_count} song(s) were not found "
+            f"All {total_count} tracks have Spotify URLs and all existing "
+            f"Notion records are linked to Spotify.\n\n"
+            f"After checking Notion, {unmatched_desc} were not found "
             f"by Spotify URL.\n\n"
-            f"Create new records for all unmatched songs and artists?\n"
+            f"Create new records for all unmatched items?\n"
             f"(Skips manual name-matching dialogs)",
             parent=self,
         )
@@ -167,8 +230,9 @@ class ExportDialog(tk.Toplevel):
         auto_create = False
 
         # ── Phase 1: Playlist Record ──────────────────────────────────
-        self.after(0, self._p1_status.set, "Creating/verifying playlist…")
+        self.after(0, self._p1_status.set, "Checking Notion for existing records…")
 
+        # Fetch cover image
         playlist = dict(self._playlist)
         if self._sp:
             try:
@@ -180,8 +244,59 @@ class ExportDialog(tk.Toplevel):
                 log.debug("Could not fetch cover for %r: %s",
                           playlist["name"], traceback.format_exc().splitlines()[-1])
 
+        # ── Auto-create pre-flight (all in Phase 1) ──────────────────
+        if all_have_urls:
+            from notion._songs import _batch_lookup_songs, _load_all_songs_cache
+            from notion._artists import _batch_lookup_artists
+            from notion._playlists import _batch_lookup_playlists, _all_playlists_have_urls
+
+            _load_all_songs_cache()
+
+            # Pre-flight: count unmatched songs
+            preview_songs_reg = {}
+            track_urls = [t["Spotify URL"] for t in self._tracks]
+            _batch_lookup_songs(track_urls, preview_songs_reg)
+            unmatched_songs = len(track_urls) - len(preview_songs_reg)
+
+            # Pre-flight: count unmatched artists
+            preview_artists_reg = {}
+            artist_ids = list({a["id"] for t in self._tracks for a in t.get("Artists", [])})
+            _batch_lookup_artists(artist_ids, preview_artists_reg)
+            unmatched_artists = len(artist_ids) - len(preview_artists_reg)
+
+            # Pre-flight: check playlist
+            preview_pl_reg = {}
+            _batch_lookup_playlists([playlist["id"]], preview_pl_reg, db_id)
+            playlist_unmatched = playlist["id"] not in preview_pl_reg
+
+            # Only offer auto-create if all existing Notion playlists have URLs
+            all_playlists_linked = _all_playlists_have_urls(db_id)
+
+            unmatched_total = unmatched_songs + unmatched_artists
+            if playlist_unmatched and all_playlists_linked:
+                unmatched_total += 1
+
+            if unmatched_total > 0 and all_playlists_linked:
+                result_holder = {}
+                done_event = threading.Event()
+                self.after(0, self._ask_auto_create,
+                           unmatched_songs, unmatched_artists,
+                           playlist_unmatched, len(self._tracks),
+                           result_holder, done_event)
+                done_event.wait()
+                auto_create = result_holder.get("auto_create", False)
+
+                if auto_create:
+                    log.info("Auto-create enabled: %d unmatched song(s), %d unmatched artist(s)%s",
+                             unmatched_songs, unmatched_artists,
+                             ", 1 unmatched playlist" if playlist_unmatched else "")
+
+        # ── Export playlist record ────────────────────────────────────
+        self.after(0, self._p1_status.set, "Creating/verifying playlist…")
+
         try:
-            pl_result = export_playlist(playlist, db_id, match_cb=match_cb)
+            pl_result = export_playlist(playlist, db_id, match_cb=match_cb,
+                                        auto_create=auto_create)
         except Exception:
             import traceback
             self.after(0, self._show_error, traceback.format_exc().splitlines()[-1])
@@ -203,40 +318,6 @@ class ExportDialog(tk.Toplevel):
         if self._stop_event.is_set():
             self.after(0, self._close_btn.configure, {"text": "Close"})
             return
-
-        # ── Auto-create prompt (if all tracks have Spotify URLs) ─────
-        if all_have_urls:
-            from notion._songs import _batch_lookup_songs, _load_all_songs_cache
-            from notion._artists import _batch_lookup_artists
-
-            self.after(0, self._p2_status.set, "Checking Notion for existing records…")
-            _load_all_songs_cache()
-
-            # Quick pre-flight to count unmatched songs
-            preview_songs_reg = {}
-            track_urls = [t["Spotify URL"] for t in self._tracks]
-            _batch_lookup_songs(track_urls, preview_songs_reg)
-            unmatched_songs = len(track_urls) - len(preview_songs_reg)
-
-            # Quick pre-flight to count unmatched artists
-            preview_artists_reg = {}
-            artist_ids = list({a["id"] for t in self._tracks for a in t.get("Artists", [])})
-            _batch_lookup_artists(artist_ids, preview_artists_reg)
-            unmatched_artists = len(artist_ids) - len(preview_artists_reg)
-
-            unmatched_total = unmatched_songs + unmatched_artists
-            if unmatched_total > 0:
-                result_holder = {}
-                done_event = threading.Event()
-                self.after(0, self._ask_auto_create,
-                           unmatched_songs, len(self._tracks),
-                           result_holder, done_event)
-                done_event.wait()
-                auto_create = result_holder.get("auto_create", False)
-
-                if auto_create:
-                    log.info("Auto-create enabled: %d unmatched song(s), %d unmatched artist(s)",
-                             unmatched_songs, unmatched_artists)
 
         # ── Phase 2: Songs & Artists ─────────────────────────────────
         self.after(0, self._p2_status.set, "Exporting…")
@@ -299,6 +380,13 @@ class ExportDialog(tk.Toplevel):
             self.after(0, self._show_error, traceback.format_exc().splitlines()[-1])
             return
 
+        self._undo_manifest = {
+            "playlist_songs": songs_summary.get("created_page_ids", []),
+            "songs":          tracks_summary.get("created_song_page_ids", []),
+            "artists":        tracks_summary.get("created_artist_page_ids", []),
+            "playlist":       pl_result.get("created_page_ids", []),
+        }
+
         self.after(0, self._show_summary, tracks_summary, pl_result, songs_summary)
 
     def _show_summary(self, tracks_summary, pl_result, songs_summary):
@@ -342,17 +430,71 @@ class ExportDialog(tk.Toplevel):
             lines.append(f"Errors ({len(all_errors)}) — see Settings tab:")
             lines.extend(f"  {e['track']}: {e['error']}" for e in all_errors)
 
+        summary_str = "\n".join(lines) if lines else "No details."
+        log.info("Export summary for '%s':\n%s", self._playlist["name"], summary_str)
+
         self._summary_text.configure(state="normal")
         self._summary_text.delete("1.0", "end")
-        self._summary_text.insert("end", "\n".join(lines))
+        self._summary_text.insert("end", summary_str)
         self._summary_text.configure(state="disabled")
 
         self._close_btn.configure(text="Close")
 
+        total_created = sum(len(v) for v in self._undo_manifest.values())
+        if total_created > 0:
+            self._undo_btn = ttk.Button(
+                self._btn_bar,
+                text=f"Undo Export ({total_created})",
+                command=self._start_undo,
+            )
+            self._undo_btn.pack(side="right", padx=(0, 6))
+
+        if self._close_on_complete.get() and total_created == 0:
+            self.after(1500, self._close_with_tab)
+
+    # ------------------------------------------------------------------
+    # Undo
+    # ------------------------------------------------------------------
+
+    def _start_undo(self):
+        self._undo_btn.configure(state="disabled")
+        self._close_btn.configure(state="disabled")
+        total = sum(len(v) for v in self._undo_manifest.values())
+        self._p3_status.set("Undoing export…")
+        self._p3_bar.configure(value=0, maximum=max(total, 1))
+        self._stop_event.clear()
+        threading.Thread(target=self._run_undo, daemon=True).start()
+
+    def _run_undo(self):
+        def undo_progress(current, total, category):
+            self.after(0, self._p3_bar.configure, {"value": current})
+            self.after(0, self._p3_status.set,
+                       f"Undoing {current}/{total}  —  {category}")
+
+        result = undo_export(self._undo_manifest,
+                             progress_cb=undo_progress,
+                             stop_event=self._stop_event)
+
+        def finish():
+            msg = f"Undo complete: {result['archived']} archived"
+            if result["failed"]:
+                msg += f", {result['failed']} failed"
+            self._p3_status.set(msg)
+            self._undo_btn.configure(text="Undone", state="disabled")
+            self._close_btn.configure(state="normal", text="Close")
+            self._undo_manifest = {}
+
+        self.after(0, finish)
+
     def _show_error(self, msg: str):
         self._p1_status.set(f"Error: {msg}")
         self._close_btn.configure(text="Close")
-        self._start_btn.configure(state="normal" if not self._missing_count else "disabled")
+        self._start_btn.configure(text="Start Export",
+                                  state="normal" if not self._missing_count else "disabled")
+
+    def _close_with_tab(self):
+        self._on_close()
+        self._parent_tab._close_cb()
 
     def _on_close(self):
         self._stop_event.set()
