@@ -148,26 +148,28 @@ class PlaylistTab(ttk.Frame):
         threading.Thread(target=self._fetch_from_spotify, daemon=True).start()
 
     def _fetch_from_spotify(self):
-        try:
-            meta = self._sp.playlist(self._playlist["id"],
-                                     fields="name,tracks.total")
-            tracks_meta = meta.get("tracks") or meta.get("items") or {}
-            total = tracks_meta.get("total", 0)
-            self._playlist["total"] = total
-            log.debug("Playlist %r has %d tracks", self._playlist["name"], total)
-        except spotipy.SpotifyException as exc:
-            log.warning("Could not fetch track total for %r: HTTP %s",
-                        self._playlist["name"], exc.http_status)
-            if exc.http_status == 403:
-                self.after(0, self._set_error,
-                           "Access denied (403) — this playlist may be private "
-                           "or owned by another user.")
-                return
-            total = 0
-        except Exception:
-            log.warning("Could not fetch track total for %r:\n%s",
-                        self._playlist["name"], traceback.format_exc())
-            total = 0
+        total = self._playlist.get("total")
+        if total is None:
+            try:
+                meta = self._sp.playlist(self._playlist["id"],
+                                         fields="name,tracks.total")
+                tracks_meta = meta.get("tracks") or meta.get("items") or {}
+                total = tracks_meta.get("total", 0)
+                self._playlist["total"] = total
+                log.debug("Playlist %r has %d tracks", self._playlist["name"], total)
+            except spotipy.SpotifyException as exc:
+                log.warning("Could not fetch track total for %r: HTTP %s",
+                            self._playlist["name"], exc.http_status)
+                if exc.http_status == 403:
+                    self.after(0, self._set_error,
+                               "Access denied (403) — this playlist may be private "
+                               "or owned by another user.")
+                    return
+                total = 0
+            except Exception:
+                log.warning("Could not fetch track total for %r:\n%s",
+                            self._playlist["name"], traceback.format_exc())
+                total = 0
 
         def progress_cb(fetched):
             label = f"Loading… {fetched} / {total}" if total else f"Loading… {fetched}"

@@ -29,7 +29,7 @@ def fetch_user_playlists(sp: spotipy.Spotify) -> list[dict]:
             playlists.append({
                 "id": item["id"],
                 "name": item.get("name", "<unnamed>"),
-                "total": None,
+                "total": (item.get("tracks") or item.get("items") or {}).get("total"),
                 "owner": owner.get("display_name") or owner.get("id", "unknown"),
             })
         results = sp.next(results) if results.get("next") else None
